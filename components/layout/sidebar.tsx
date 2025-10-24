@@ -34,6 +34,12 @@ const sidebarItems: SidebarItem[] = [
     roles: ["teacher", "preceptor"],
   },
   {
+    title: "Cursos",
+    href: "/courses",
+    icon: Calendar,
+    roles: ["teacher", "preceptor"],
+  },
+  {
     title: "Notas y Asistencia",
     href: "/grades",
     icon: ClipboardList,
@@ -78,7 +84,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
 
   if (!user) return null
 
-  const isAdmin = user?.dbRole === 'administrador'
+  const isAdmin = user?.dbRole === 'administrador' || user?.dbRole === 'directivo'
   const filteredItems = isAdmin ? sidebarItems : sidebarItems.filter((item) => item.roles.includes(user.role))
 
   return (

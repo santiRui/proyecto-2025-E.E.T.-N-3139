@@ -1,18 +1,76 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
-import { User, Mail, Phone, MapPin, Calendar, BookOpen, TrendingUp, Clock } from "lucide-react"
+import { User, Mail, Phone, MapPin, Calendar, BookOpen, TrendingUp, Clock, Plus, Trash2 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 
 interface StudentProfileProps {
   student: any
   userRole: string
+  userDbRole?: string
 }
 
-export function StudentProfile({ student, userRole }: StudentProfileProps) {
+export function StudentProfile({ student, userRole, userDbRole }: StudentProfileProps) {
+  const canManageTutors = userRole === "preceptor" || userDbRole === 'directivo'
+  const [allTutors, setAllTutors] = useState<any[]>([])
+  const [studentTutors, setStudentTutors] = useState<any[]>([])
+  const [selectedTutor, setSelectedTutor] = useState<string>("")
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    if (!canManageTutors) return
+    ;(async () => {
+      try {
+        const [tRes, sRes] = await Promise.all([
+          fetch('/api/tutors', { credentials: 'include' }),
+          fetch(`/api/student-tutors?student_id=${encodeURIComponent(student.id)}`, { credentials: 'include' }),
+        ])
+        const tData = await tRes.json().catch(() => ({}))
+        const sData = await sRes.json().catch(() => ({}))
+        if (tRes.ok) setAllTutors(tData.tutors || [])
+        if (sRes.ok) setStudentTutors(sData.tutors || [])
+      } catch {}
+    })()
+  }, [student?.id, canManageTutors])
+
+  async function addTutor() {
+    if (!selectedTutor) return
+    try {
+      const res = await fetch('/api/student-tutors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ student_id: student.id, tutor_id: selectedTutor }),
+      })
+      if (res.ok) {
+        setSelectedTutor("")
+        setOpen(false)
+        const r = await fetch(`/api/student-tutors?student_id=${encodeURIComponent(student.id)}`, { credentials: 'include' })
+        const d = await r.json().catch(() => ({}))
+        if (r.ok) setStudentTutors(d.tutors || [])
+      }
+    } catch {}
+  }
+
+  async function removeTutor(tutorId: string) {
+    try {
+      const res = await fetch(`/api/student-tutors?student_id=${encodeURIComponent(student.id)}&tutor_id=${encodeURIComponent(tutorId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (res.ok) {
+        setStudentTutors((prev) => prev.filter((t) => t.id !== tutorId))
+      }
+    } catch {}
+  }
   const getStatusColor = (status: string) => {
     switch (status) {
       case "active":
@@ -168,19 +226,89 @@ export function StudentProfile({ student, userRole }: StudentProfileProps) {
           </div>
         </div>
 
-        {/* Actions */}
-        {userRole === "preceptor" && (
+        {/* Gestión de tutores */}
+        {canManageTutors && (
           <>
             <Separator />
-            <div className="space-y-2">
-              <Button className="w-full bg-transparent" variant="outline">
-                <Calendar className="w-4 h-4 mr-2" />
-                Programar Reunión
-              </Button>
-              <Button className="w-full bg-transparent" variant="outline">
-                <Mail className="w-4 h-4 mr-2" />
-                Contactar Padres
-              </Button>
+            <div className="space-y-3">
+              <h4 className="font-semibold text-foreground">Tutores</h4>
+              <div className="space-y-2">
+                {studentTutors.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Sin tutores asociados</p>
+                )}
+                {studentTutors.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between p-2 border border-border rounded">
+                    <div>
+                      <p className="text-sm font-medium">{t.nombre_completo}</p>
+                      <p className="text-xs text-muted-foreground">{t.correo} {t.telefono ? `· ${t.telefono}` : ''}</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => removeTutor(t.id)}>
+                      <Trash2 className="w-4 h-4 mr-1" /> Quitar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <Dialog open={open} onOpenChange={setOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-1" /> Asignar tutor
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Asignar tutor</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <Input
+                      placeholder="Buscar por nombre o DNI..."
+                      value={query}
+                      onChange={async (e) => {
+                        const q = e.target.value
+                        setQuery(q)
+                        setSearching(true)
+                        try {
+                          const res = await fetch(`/api/tutors?q=${encodeURIComponent(q)}`, { credentials: 'include' })
+                          const data = await res.json().catch(() => ({}))
+                          if (res.ok) setAllTutors(data.tutors || [])
+                        } finally {
+                          setSearching(false)
+                        }
+                      }}
+                    />
+
+                    <div className="max-h-64 overflow-auto border border-border rounded">
+                      {searching && (
+                        <div className="p-3 text-sm text-muted-foreground">Buscando...</div>
+                      )}
+                      {!searching && (allTutors || []).filter((t) => !studentTutors.some((st) => st.id === t.id)).length === 0 && (
+                        <div className="p-3 text-sm text-muted-foreground">Sin resultados</div>
+                      )}
+                      {(!searching && allTutors || [])
+                        .filter((t) => !studentTutors.some((st) => st.id === t.id))
+                        .map((t) => (
+                          <label key={t.id} className="flex items-center gap-2 p-2 border-b border-border/50">
+                            <input
+                              type="radio"
+                              name="sel_tutor"
+                              value={t.id}
+                              checked={selectedTutor === t.id}
+                              onChange={() => setSelectedTutor(t.id)}
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{t.nombre_completo}</p>
+                              <p className="text-xs text-muted-foreground">{t.dni ? `${t.dni} · ` : ''}{t.correo}</p>
+                            </div>
+                          </label>
+                        ))}
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+                    <Button onClick={addTutor} disabled={!selectedTutor}>Asociar</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </>
         )}

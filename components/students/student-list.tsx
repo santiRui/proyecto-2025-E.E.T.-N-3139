@@ -83,13 +83,28 @@ interface StudentListProps {
   userRole: string
   onSelectStudent: (student: any) => void
   selectedStudentId?: number
+  students?: any[]
 }
 
-export function StudentList({ userRole, onSelectStudent, selectedStudentId }: StudentListProps) {
+export function StudentList({ userRole, onSelectStudent, selectedStudentId, students }: StudentListProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCourse, setSelectedCourse] = useState("Todos los cursos")
 
-  const filteredStudents = mockStudents.filter((student) => {
+  const sourceStudents = Array.isArray(students) && students.length > 0
+    ? students.map((s) => ({
+        id: s.id,
+        name: s.nombre_completo || s.name || 'Sin nombre',
+        course: s.course || '—',
+        email: s.correo || s.email || '',
+        phone: s.telefono || s.phone || '',
+        average: s.average ?? 0,
+        attendance: s.attendance ?? 0,
+        status: s.status || 'active',
+        photo: s.photo || null,
+      }))
+    : mockStudents
+
+  const filteredStudents = sourceStudents.filter((student) => {
     const matchesSearch =
       student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -174,7 +189,7 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId }: St
                   <AvatarFallback className="bg-primary text-primary-foreground">
                     {student.name
                       .split(" ")
-                      .map((n) => n[0])
+                      .map((n: string) => n[0])
                       .join("")}
                   </AvatarFallback>
                 </Avatar>

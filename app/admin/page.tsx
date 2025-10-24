@@ -16,6 +16,7 @@ const roles = [
   { value: "docente", label: "Docente" },
   { value: "preceptor", label: "Preceptor" },
   { value: "tutor", label: "Padre/Tutor" },
+  { value: "directivo", label: "Directivo" },
   { value: "administrador", label: "Administrador" },
 ]
 

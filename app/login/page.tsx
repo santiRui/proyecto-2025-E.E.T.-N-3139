@@ -17,6 +17,7 @@ const userRoles = [
   { value: "docente", label: "Docente", icon: Users },
   { value: "preceptor", label: "Preceptor", icon: UserCheck },
   { value: "tutor", label: "Padre/Tutor", icon: Heart },
+  { value: "directivo", label: "Directivo", icon: Users },
   { value: "administrador", label: "Administrador", icon: Users },
 ]
 
@@ -58,6 +59,7 @@ export default function LoginPage() {
           preceptor: 'preceptor',
           tutor: 'parent',
           estudiante: 'student',
+          directivo: 'teacher',
         }
         const uiRole = mapEsToEn[dbRole] || 'student'
         localStorage.setItem('user', JSON.stringify({ username, role: uiRole, dbRole }))

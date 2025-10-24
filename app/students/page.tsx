@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation"
 export default function StudentsPage() {
   const [user, setUser] = useState<any>(null)
   const [selectedStudent, setSelectedStudent] = useState<any>(null)
+  const [students, setStudents] = useState<any[]>([])
   const router = useRouter()
 
   useEffect(() => {
@@ -18,11 +19,24 @@ export default function StudentsPage() {
       return
     }
     const parsedUser = JSON.parse(userData)
-    if (!["teacher", "preceptor"].includes(parsedUser.role)) {
+    if (!["preceptor", "teacher"].includes(parsedUser.role) && parsedUser.dbRole !== 'directivo') {
       router.push("/dashboard")
       return
     }
     setUser(parsedUser)
+  }, [router])
+
+  useEffect(() => {
+    const userData = localStorage.getItem("user")
+    if (!userData) return
+    const parsedUser = JSON.parse(userData)
+    ;(async () => {
+      try {
+        const res = await fetch('/api/students', { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) setStudents(data.students || [])
+      } catch {}
+    })()
   }, [router])
 
   if (!user) {
@@ -49,23 +63,35 @@ export default function StudentsPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          <div className="space-y-6">
+            {!selectedStudent && (
               <StudentList
                 userRole={user.role}
                 onSelectStudent={setSelectedStudent}
                 selectedStudentId={selectedStudent?.id}
+                students={students}
               />
-            </div>
-            <div>
-              {selectedStudent ? (
-                <StudentProfile student={selectedStudent} userRole={user.role} />
-              ) : (
-                <div className="bg-card border border-border rounded-lg p-8 text-center">
-                  <p className="text-muted-foreground">Selecciona un estudiante para ver su perfil</p>
+            )}
+
+            {selectedStudent && (
+              <div className="space-y-4">
+                <div>
+                  <button
+                    className="text-sm px-3 py-2 border rounded hover:bg-accent"
+                    onClick={() => setSelectedStudent(null)}
+                  >
+                    ← Volver a la lista
+                  </button>
                 </div>
-              )}
-            </div>
+                <StudentProfile student={selectedStudent} userRole={user.role} userDbRole={user.dbRole} />
+              </div>
+            )}
+
+            {!selectedStudent && (
+              <div className="bg-card border border-border rounded-lg p-8 text-center">
+                <p className="text-muted-foreground">Selecciona un estudiante para ver su perfil</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
