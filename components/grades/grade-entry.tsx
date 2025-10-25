@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,13 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Save, Users, BookOpen } from "lucide-react"
-
-const mockStudents = [
-  { id: 1, name: "Ana García" },
-  { id: 2, name: "Carlos Rodríguez" },
-  { id: 3, name: "María López" },
-  { id: 4, name: "Juan Pérez" },
-]
 
 const gradeTypes = [
   "Parcial",
@@ -33,15 +26,135 @@ interface GradeEntryProps {
 }
 
 export function GradeEntry({ userRole }: GradeEntryProps) {
-  const [selectedCourse, setSelectedCourse] = useState("5° Año A")
+  const isStaffView = userRole === "teacher" || userRole === "preceptor"
+
+  type Course = {
+    id: string
+    nombre: string
+    descripcion?: string | null
+    anio_lectivo?: number | null
+  }
+
+  type Student = {
+    id: string
+    nombre_completo: string
+    correo?: string | null
+    dni?: string | null
+  }
+
+  const [courses, setCourses] = useState<Course[]>([])
+  const [courseLoading, setCourseLoading] = useState(false)
+  const [courseError, setCourseError] = useState("")
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null)
+
+  const [students, setStudents] = useState<Student[]>([])
+  const [studentsLoading, setStudentsLoading] = useState(false)
+  const [studentsError, setStudentsError] = useState("")
+
+  const currentCourse = useMemo(() => {
+    if (!selectedCourseId) return null
+    return courses.find((course) => course.id === selectedCourseId) || null
+  }, [courses, selectedCourseId])
+
   const [selectedSubject, setSelectedSubject] = useState("Matemática")
   const [gradeType, setGradeType] = useState("")
   const [gradeDate, setGradeDate] = useState("")
   const [gradeWeight, setGradeWeight] = useState("")
   const [observations, setObservations] = useState("")
-  const [studentGrades, setStudentGrades] = useState<{ [key: number]: string }>({})
+  const [studentGrades, setStudentGrades] = useState<Record<string, string>>({})
 
-  const handleGradeChange = (studentId: number, grade: string) => {
+  useEffect(() => {
+    if (!isStaffView) return
+
+    let cancelled = false
+
+    async function loadCourses() {
+      setCourseLoading(true)
+      setCourseError("")
+      try {
+        const res = await fetch('/api/courses', { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (!cancelled) {
+          if (!res.ok) {
+            setCourseError(data?.error || 'No se pudieron obtener los cursos')
+            setCourses([])
+            setSelectedCourseId(null)
+          } else {
+            const list = Array.isArray(data?.courses) ? data.courses : []
+            setCourses(list)
+            setSelectedCourseId((prev) => {
+              if (prev && list.some((course: Course) => course.id === prev)) return prev
+              return list.length ? list[0].id : null
+            })
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setCourseError('No se pudieron obtener los cursos')
+          setCourses([])
+          setSelectedCourseId(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setCourseLoading(false)
+        }
+      }
+    }
+
+    loadCourses()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isStaffView])
+
+  useEffect(() => {
+    if (!isStaffView || !selectedCourseId) {
+      setStudents([])
+      setStudentGrades({})
+      return
+    }
+
+    let cancelled = false
+
+    async function loadStudents() {
+      setStudentsLoading(true)
+      setStudentsError("")
+      try {
+        const res = await fetch(`/api/course-students?course_id=${encodeURIComponent(selectedCourseId as string)}`, { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (!cancelled) {
+          if (!res.ok) {
+            setStudentsError(data?.error || 'No se pudieron obtener los estudiantes del curso')
+            setStudents([])
+            setStudentGrades({})
+          } else {
+            const list = Array.isArray(data?.students) ? data.students : []
+            setStudents(list)
+            setStudentGrades({})
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setStudentsError('No se pudieron obtener los estudiantes del curso')
+          setStudents([])
+          setStudentGrades({})
+        }
+      } finally {
+        if (!cancelled) {
+          setStudentsLoading(false)
+        }
+      }
+    }
+
+    loadStudents()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isStaffView, selectedCourseId])
+
+  const handleGradeChange = (studentId: string, grade: string) => {
     setStudentGrades((prev) => ({
       ...prev,
       [studentId]: grade,
@@ -49,9 +162,11 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
   }
 
   const handleSaveGrades = () => {
+    if (!currentCourse) return
     // Here you would save the grades to the backend
     console.log("Saving grades:", {
-      course: selectedCourse,
+      courseId: selectedCourseId,
+      courseName: currentCourse?.nombre,
       subject: selectedSubject,
       type: gradeType,
       date: gradeDate,
@@ -80,12 +195,27 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
 
   const isFormValid = () => {
     return (
-      selectedCourse &&
+      selectedCourseId &&
       selectedSubject &&
       gradeType &&
       gradeDate &&
       gradeWeight &&
       Object.keys(studentGrades).length > 0
+    )
+  }
+
+  if (!isStaffView) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Sin acceso</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Solo docentes y preceptores pueden cargar calificaciones.
+          </p>
+        </CardContent>
+      </Card>
     )
   }
 
@@ -103,16 +233,23 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="course">Curso</Label>
-              <Select value={selectedCourse} onValueChange={setSelectedCourse}>
+              <Select
+                value={selectedCourseId ?? ""}
+                onValueChange={(value) => setSelectedCourseId(value)}
+                disabled={courseLoading || courses.length === 0}
+              >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder={courseLoading ? "Cargando cursos..." : "Selecciona un curso"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="5° Año A">5° Año A</SelectItem>
-                  <SelectItem value="4° Año B">4° Año B</SelectItem>
-                  <SelectItem value="3° Año C">3° Año C</SelectItem>
+                  {courses.map((course) => (
+                    <SelectItem key={course.id} value={course.id}>
+                      {course.nombre}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {courseError && <p className="text-xs text-destructive">{courseError}</p>}
             </div>
 
             <div className="space-y-2">
@@ -183,7 +320,7 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="w-5 h-5" />
-            Cargar Calificaciones - {selectedCourse}
+            Cargar Calificaciones {currentCourse ? `- ${currentCourse.nombre}` : ""}
           </CardTitle>
           {gradeType && (
             <div className="flex items-center gap-2">
@@ -195,34 +332,54 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {mockStudents.map((student) => (
-              <div key={student.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
-                    <span className="text-sm font-medium text-primary">
-                      {student.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")}
-                    </span>
-                  </div>
-                  <p className="font-medium">{student.name}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min="1"
-                    max="10"
-                    step="0.1"
-                    placeholder="Nota"
-                    className={`w-20 text-center ${getGradeColor(studentGrades[student.id] || "")}`}
-                    value={studentGrades[student.id] || ""}
-                    onChange={(e) => handleGradeChange(student.id, e.target.value)}
-                  />
-                  <span className="text-sm text-muted-foreground">/10</span>
-                </div>
+            {studentsError && <p className="text-sm text-destructive">{studentsError}</p>}
+
+            {studentsLoading ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">Cargando estudiantes...</div>
+            ) : students.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                {selectedCourseId
+                  ? "Este curso aún no tiene estudiantes asignados."
+                  : "Selecciona un curso para comenzar."}
               </div>
-            ))}
+            ) : (
+              <div className="space-y-4">
+                {students.map((student) => (
+                  <div key={student.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
+                        <span className="text-sm font-medium text-primary">
+                          {student.nombre_completo
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-medium">{student.nombre_completo}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {student.dni ? `${student.dni} · ` : ""}
+                          {student.correo || "Sin correo"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min="1"
+                        max="10"
+                        step="0.1"
+                        placeholder="Nota"
+                        className={`w-20 text-center ${getGradeColor(studentGrades[student.id] || "")}`}
+                        value={studentGrades[student.id] || ""}
+                        onChange={(e) => handleGradeChange(student.id, e.target.value)}
+                      />
+                      <span className="text-sm text-muted-foreground">/10</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="flex justify-end pt-4">
               <Button onClick={handleSaveGrades} disabled={!isFormValid()} className="gap-2">
