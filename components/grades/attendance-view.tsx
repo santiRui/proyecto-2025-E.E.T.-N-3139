@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -57,18 +57,22 @@ const mockAttendance = {
       { date: "2025-01-20", subject: "Matemática", status: "present" },
     ],
   },
-  teacher: [
-    {
-      course: "5° Año A",
-      subject: "Matemática",
-      students: [
-        { name: "Ana García", percentage: 95, status: "excellent" },
-        { name: "Carlos Rodríguez", percentage: 88, status: "good" },
-        { name: "María López", percentage: 98, status: "excellent" },
-        { name: "Juan Pérez", percentage: 75, status: "at_risk" },
-      ],
-    },
-  ],
+  teacher: [],
+}
+
+type Course = {
+  id: string
+  nombre: string
+  descripcion?: string | null
+  anio_lectivo?: number | null
+}
+
+type Student = {
+  id: string
+  nombre_completo: string
+  correo?: string | null
+  dni?: string | null
+  telefono?: string | null
 }
 
 interface AttendanceViewProps {
@@ -77,7 +81,108 @@ interface AttendanceViewProps {
 
 export function AttendanceView({ userRole }: AttendanceViewProps) {
   const [selectedPeriod, setSelectedPeriod] = useState("current")
-  const [selectedCourse, setSelectedCourse] = useState("5° Año A")
+
+  const isStaffView = userRole === "teacher" || userRole === "preceptor"
+
+  const [courses, setCourses] = useState<Course[]>([])
+  const [courseLoading, setCourseLoading] = useState(false)
+  const [courseError, setCourseError] = useState("")
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null)
+
+  const [students, setStudents] = useState<Student[]>([])
+  const [studentsLoading, setStudentsLoading] = useState(false)
+  const [studentsError, setStudentsError] = useState("")
+
+  useEffect(() => {
+    if (!isStaffView) return
+
+    let cancelled = false
+
+    async function loadCourses() {
+      setCourseLoading(true)
+      setCourseError("")
+      try {
+        const res = await fetch('/api/courses', { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (!cancelled) {
+          if (!res.ok) {
+            setCourseError(data?.error || 'No se pudieron obtener los cursos')
+            setCourses([])
+            setSelectedCourseId(null)
+          } else {
+            const list = Array.isArray(data?.courses) ? data.courses : []
+            setCourses(list)
+            setSelectedCourseId((prev) => {
+              if (prev && list.some((course: Course) => course.id === prev)) return prev
+              return list.length ? list[0].id : null
+            })
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setCourseError('No se pudieron obtener los cursos')
+          setCourses([])
+          setSelectedCourseId(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setCourseLoading(false)
+        }
+      }
+    }
+
+    loadCourses()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isStaffView])
+
+  useEffect(() => {
+    if (!isStaffView || !selectedCourseId) {
+      setStudents([])
+      return
+    }
+
+    let cancelled = false
+
+    async function loadStudents() {
+      setStudentsLoading(true)
+      setStudentsError("")
+      try {
+        const res = await fetch(`/api/course-students?course_id=${encodeURIComponent(selectedCourseId as string)}`, { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (!cancelled) {
+          if (!res.ok) {
+            setStudentsError(data?.error || 'No se pudieron obtener los estudiantes del curso')
+            setStudents([])
+          } else {
+            setStudents(Array.isArray(data?.students) ? data.students : [])
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setStudentsError('No se pudieron obtener los estudiantes del curso')
+          setStudents([])
+        }
+      } finally {
+        if (!cancelled) {
+          setStudentsLoading(false)
+        }
+      }
+    }
+
+    loadStudents()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isStaffView, selectedCourseId])
+
+  const currentCourse = useMemo(() => {
+    if (!selectedCourseId) return null
+    return courses.find((course) => course.id === selectedCourseId) || null
+  }, [courses, selectedCourseId])
 
   const getAttendanceColor = (percentage: number) => {
     if (percentage >= 90) return "text-green-600"
@@ -261,64 +366,80 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
     )
   }
 
-  // Teacher/Preceptor view
+  if (!isStaffView) {
+    return null
+  }
+
   return (
     <div className="space-y-6">
-      {/* Course Selector */}
       <div className="flex items-center gap-4">
-        <Select value={selectedCourse} onValueChange={setSelectedCourse}>
-          <SelectTrigger className="w-48">
-            <SelectValue />
+        <Select
+          value={selectedCourseId ?? ""}
+          onValueChange={(value) => setSelectedCourseId(value)}
+          disabled={courseLoading || courses.length === 0}
+        >
+          <SelectTrigger className="w-64">
+            <SelectValue placeholder={courseLoading ? "Cargando cursos..." : "Selecciona un curso"} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="5° Año A">5° Año A</SelectItem>
-            <SelectItem value="4° Año B">4° Año B</SelectItem>
+            {courses.map((course) => (
+              <SelectItem key={course.id} value={course.id}>
+                {course.nombre}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
+        {courseLoading && <span className="text-sm text-muted-foreground">Cargando cursos...</span>}
       </div>
 
-      {/* Course Attendance */}
-      {mockAttendance.teacher.map((course, index) => {
-        if (course.course !== selectedCourse) return null
+      {courseError && <div className="text-sm text-destructive">{courseError}</div>}
 
-        return (
-          <Card key={index}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="w-5 h-5" />
-                Asistencia - {course.subject} ({course.course})
-              </CardTitle>
-            </CardHeader>
+      {courses.length === 0 && !courseLoading ? (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            No hay cursos disponibles.
+          </CardContent>
+        </Card>
+      ) : null}
 
-            <CardContent>
+      {currentCourse && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Asistencia - {currentCourse.nombre}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {studentsError && <div className="mb-3 text-sm text-destructive">{studentsError}</div>}
+            {studentsLoading ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">Cargando estudiantes...</div>
+            ) : students.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">Este curso aún no tiene estudiantes asignados.</div>
+            ) : (
               <div className="space-y-3">
-                {course.students.map((student, studentIndex) => (
+                {students.map((student) => (
                   <div
-                    key={studentIndex}
-                    className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50"
+                    key={student.id}
+                    className="flex items-center justify-between p-4 border border-border rounded-lg"
                   >
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-4 h-4 text-primary" />
-                      <div>
-                        <p className="font-medium">{student.name}</p>
-                        <Badge className={`${getStatusColor(student.status)} text-xs`}>
-                          {getStatusLabel(student.status)}
-                        </Badge>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Asistencia</p>
-                      <p className={`text-lg font-bold ${getAttendanceColor(student.percentage)}`}>
-                        {student.percentage}%
+                    <div>
+                      <p className="font-medium">{student.nombre_completo}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {student.dni ? `${student.dni} · ` : ""}
+                        {student.correo || "Sin correo"}
                       </p>
                     </div>
+                    <Badge variant="outline" className="text-xs text-muted-foreground">
+                      Asistencia no registrada
+                    </Badge>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        )
-      })}
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
