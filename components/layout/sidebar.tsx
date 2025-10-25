@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { Calendar, Users, BookOpen, BarChart3, Newspaper, UserPlus, ClipboardList, X, LogOut } from "lucide-react"
+import { Calendar, Users, BookOpen, BarChart3, Newspaper, UserPlus, ClipboardList, ShieldCheck, X, LogOut } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 
@@ -20,6 +20,12 @@ const sidebarItems: SidebarItem[] = [
     href: "/dashboard",
     icon: Calendar,
     roles: ["student", "teacher", "preceptor", "parent"],
+  },
+  {
+    title: "Administración",
+    href: "/admin",
+    icon: ShieldCheck,
+    roles: [],
   },
   {
     title: "Noticias",
