@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'teacher', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'teacher', 'docente', 'directivo', 'administrador'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 

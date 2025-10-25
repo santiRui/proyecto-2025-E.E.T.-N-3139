@@ -30,13 +30,6 @@ export function QuickActions({ userRole }: QuickActionsProps) {
             color: "bg-blue-100 text-blue-700 hover:bg-blue-200",
           },
           {
-            title: "Gestionar Estudiantes",
-            description: "Ver y editar información",
-            icon: Users,
-            href: "/students",
-            color: "bg-purple-100 text-purple-700 hover:bg-purple-200",
-          },
-          {
             title: "Cargar Notas",
             description: "Actualizar calificaciones",
             icon: ClipboardList,

@@ -8,85 +8,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Search, Filter, Users } from "lucide-react"
 
-const mockStudents = [
-  {
-    id: 1,
-    name: "Ana García",
-    course: "5° Año A",
-    email: "ana.garcia@estudiante.edu.ar",
-    phone: "+54 11 1234-5678",
-    average: 8.5,
-    attendance: 95,
-    status: "active",
-    photo: "/diverse-student-girl.png",
-  },
-  {
-    id: 2,
-    name: "Carlos Rodríguez",
-    course: "4° Año B",
-    email: "carlos.rodriguez@estudiante.edu.ar",
-    phone: "+54 11 2345-6789",
-    average: 7.8,
-    attendance: 88,
-    status: "active",
-    photo: "/student-boy.png",
-  },
-  {
-    id: 3,
-    name: "María López",
-    course: "6° Año A",
-    email: "maria.lopez@estudiante.edu.ar",
-    phone: "+54 11 3456-7890",
-    average: 9.2,
-    attendance: 98,
-    status: "active",
-    photo: "/placeholder-rh70l.png",
-  },
-  {
-    id: 4,
-    name: "Juan Pérez",
-    course: "3° Año C",
-    email: "juan.perez@estudiante.edu.ar",
-    phone: "+54 11 4567-8901",
-    average: 6.5,
-    attendance: 82,
-    status: "warning",
-    photo: "/student-boy-2.jpg",
-  },
-  {
-    id: 5,
-    name: "Sofía Martínez",
-    course: "5° Año B",
-    email: "sofia.martinez@estudiante.edu.ar",
-    phone: "+54 11 5678-9012",
-    average: 8.9,
-    attendance: 96,
-    status: "active",
-    photo: "/student-girl-3.jpg",
-  },
-  {
-    id: 6,
-    name: "Diego Fernández",
-    course: "4° Año A",
-    email: "diego.fernandez@estudiante.edu.ar",
-    phone: "+54 11 6789-0123",
-    average: 7.2,
-    attendance: 90,
-    status: "active",
-    photo: "/student-boy-3.jpg",
-  },
-]
-
-const courses = ["Todos los cursos", "3° Año C", "4° Año A", "4° Año B", "5° Año A", "5° Año B", "6° Año A"]
+const defaultCourses = ["3° Año C", "4° Año A", "4° Año B", "5° Año A", "5° Año B", "6° Año A"]
 
 interface StudentListProps {
   userRole: string
   onSelectStudent: (student: any) => void
   selectedStudentId?: number
   students?: any[]
+  courses?: string[]
 }
 
-export function StudentList({ userRole, onSelectStudent, selectedStudentId, students }: StudentListProps) {
+export function StudentList({ userRole, onSelectStudent, selectedStudentId, students, courses }: StudentListProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCourse, setSelectedCourse] = useState("Todos los cursos")
 
@@ -102,7 +34,9 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
         status: s.status || 'active',
         photo: s.photo || null,
       }))
-    : mockStudents
+    : []
+
+  const courseOptions = ["Todos los cursos", ...((courses && courses.length > 0) ? courses : defaultCourses)]
 
   const filteredStudents = sourceStudents.filter((student) => {
     const matchesSearch =
@@ -163,7 +97,7 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {courses.map((course) => (
+              {courseOptions.map((course) => (
                 <SelectItem key={course} value={course}>
                   {course}
                 </SelectItem>

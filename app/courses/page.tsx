@@ -31,14 +31,19 @@ export default function CoursesPage() {
   const [teacherSearching, setTeacherSearching] = useState(false)
   const [teacherResults, setTeacherResults] = useState<any[]>([])
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>("")
+  const [manageOpen, setManageOpen] = useState(false)
+  const [manageAction, setManageAction] = useState<'edit' | 'delete' | null>(null)
+  const [manageCourseId, setManageCourseId] = useState<string>("")
+  const [manageQuery, setManageQuery] = useState<string>("")
+  const [editForm, setEditForm] = useState<{ id?: string; nombre?: string; descripcion?: string; anio_lectivo?: number }>({})
   const router = useRouter()
 
   useEffect(() => {
     const u = localStorage.getItem("user")
     if (!u) { router.push("/login"); return }
     const parsed = JSON.parse(u)
-    // Acceso: docente, preceptor, directivo (directivo entra por isAdmin en sidebar; validamos igual)
-    const allowed = parsed.role === 'teacher' || parsed.role === 'preceptor' || parsed.dbRole === 'directivo'
+    // Acceso: docente, preceptor, directivo y administrador
+    const allowed = parsed.role === 'teacher' || parsed.role === 'preceptor' || parsed.dbRole === 'directivo' || parsed.dbRole === 'administrador'
     if (!allowed) { router.push('/dashboard'); return }
     setUser(parsed)
   }, [router])
@@ -122,36 +127,139 @@ export default function CoursesPage() {
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-foreground">{title}</h1>
-          {!selectedCourse && (user.role === 'preceptor' || user.dbRole === 'directivo') && (
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button>Nuevo curso</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Crear curso</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <Label>Nombre</Label>
-                    <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} required />
+          {!selectedCourse && (user.role === 'preceptor' || user.dbRole === 'directivo' || user.dbRole === 'administrador') && (
+            <div className="flex items-center gap-2">
+              <Dialog open={open} onOpenChange={setOpen}>
+                <DialogTrigger asChild>
+                  <Button>Nuevo curso</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Crear curso</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label>Nombre</Label>
+                      <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} required />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Descripción</Label>
+                      <Input value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Año lectivo</Label>
+                      <Input type="number" value={form.anio_lectivo} onChange={(e) => setForm({ ...form, anio_lectivo: e.target.value as unknown as number })} />
+                    </div>
+                    {error && <p className="text-sm text-destructive">{error}</p>}
                   </div>
-                  <div className="space-y-1">
-                    <Label>Descripción</Label>
-                    <Input value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+                    <Button onClick={createCourse} disabled={saving || !form.nombre}>Crear</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={manageOpen} onOpenChange={(o) => { setManageOpen(o); if (!o) { setManageAction(null); setManageCourseId(""); setEditForm({}) } }}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{manageAction === 'delete' ? 'Eliminar' : 'Editar'} curso</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label>Buscar</Label>
+                      <Input
+                        placeholder="Escribe el nombre o año..."
+                        value={manageQuery}
+                        onChange={(e) => setManageQuery(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Resultados</Label>
+                      <div className="max-h-64 overflow-auto border rounded divide-y">
+                        {courses
+                          .filter((c) => {
+                            const q = manageQuery.trim().toLowerCase()
+                            if (!q) return true
+                            const name = (c.nombre || '').toLowerCase()
+                            const year = String(c.anio_lectivo || '')
+                            return name.includes(q) || year.includes(q)
+                          })
+                          .map((c) => {
+                            const isSel = manageCourseId === c.id
+                            return (
+                              <button
+                                key={c.id}
+                                className={`w-full text-left p-2 hover:bg-accent/50 ${isSel ? 'bg-accent' : ''}`}
+                                onClick={() => {
+                                  setManageCourseId(c.id)
+                                  setEditForm({ id: c.id, nombre: c.nombre, descripcion: c.descripcion || '', anio_lectivo: c.anio_lectivo })
+                                }}
+                              >
+                                <div className="font-medium">{c.nombre}</div>
+                                <div className="text-xs text-muted-foreground">Año lectivo: {c.anio_lectivo}{c.descripcion ? ` · ${c.descripcion}` : ''}</div>
+                              </button>
+                            )
+                          })}
+                        {courses.length === 0 && (
+                          <div className="p-2 text-sm text-muted-foreground">No hay cursos</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {manageAction !== 'delete' && manageCourseId && (
+                      <>
+                        <div className="space-y-1">
+                          <Label>Nombre</Label>
+                          <Input value={editForm.nombre || ''} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Descripción</Label>
+                          <Input value={editForm.descripcion || ''} onChange={(e) => setEditForm({ ...editForm, descripcion: e.target.value })} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Año lectivo</Label>
+                          <Input type="number" value={editForm.anio_lectivo || new Date().getFullYear()} onChange={(e) => setEditForm({ ...editForm, anio_lectivo: e.target.value as unknown as number })} />
+                        </div>
+                      </>
+                    )}
+
+                    {manageAction === 'delete' && manageCourseId && (
+                      <p className="text-sm text-destructive">Esta acción eliminará el curso seleccionado.</p>
+                    )}
                   </div>
-                  <div className="space-y-1">
-                    <Label>Año lectivo</Label>
-                    <Input type="number" value={form.anio_lectivo} onChange={(e) => setForm({ ...form, anio_lectivo: e.target.value as unknown as number })} />
-                  </div>
-                  {error && <p className="text-sm text-destructive">{error}</p>}
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-                  <Button onClick={createCourse} disabled={saving || !form.nombre}>Crear</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setManageOpen(false)}>Cancelar</Button>
+                    {manageAction === 'delete' ? (
+                      <Button variant="destructive" disabled={!manageCourseId} onClick={async () => {
+                        if (!manageCourseId) return
+                        const res = await fetch(`/api/courses?id=${encodeURIComponent(manageCourseId)}`, { method: 'DELETE', credentials: 'include' })
+                        if (res.ok) { setManageOpen(false); setManageCourseId(""); await loadCourses() }
+                      }}>Eliminar</Button>
+                    ) : (
+                      <Button disabled={!manageCourseId || !editForm.nombre} onClick={async () => {
+                        const res = await fetch('/api/courses', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(editForm) })
+                        if (res.ok) { setManageOpen(false); setManageCourseId(""); setEditForm({}); await loadCourses() }
+                      }}>Guardar</Button>
+                    )}
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  onClick={() => { setManageCourseId(""); setEditForm({}); setManageAction('edit'); setManageOpen(true) }}
+                >
+                  Editar curso
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => { setManageCourseId(""); setEditForm({}); setManageAction('delete'); setManageOpen(true) }}
+                >
+                  Eliminar curso
+                </Button>
+              </div>
+            </div>
           )}
         </div>
 

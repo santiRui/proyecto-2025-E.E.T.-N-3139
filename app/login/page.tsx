@@ -54,12 +54,12 @@ export default function LoginPage() {
         const username = payload?.user?.nombre || 'Usuario'
         const dbRole: string = payload?.user?.rol || role
         const mapEsToEn: Record<string, string> = {
-          administrador: 'teacher',
+          administrador: 'admin',
           docente: 'teacher',
           preceptor: 'preceptor',
           tutor: 'parent',
           estudiante: 'student',
-          directivo: 'teacher',
+          directivo: 'directivo',
         }
         const uiRole = mapEsToEn[dbRole] || 'student'
         localStorage.setItem('user', JSON.stringify({ username, role: uiRole, dbRole }))

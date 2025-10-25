@@ -1,43 +1,55 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { MainLayout } from "@/components/layout/main-layout" // Importando el nuevo layout
+import { useEffect, useState } from "react"
+import { MainLayout } from "@/components/layout/main-layout"
 import { StudentList } from "@/components/students/student-list"
 import { StudentProfile } from "@/components/students/student-profile"
 import { useRouter } from "next/navigation"
 
 export default function StudentsPage() {
   const [user, setUser] = useState<any>(null)
-  const [selectedStudent, setSelectedStudent] = useState<any>(null)
   const [students, setStudents] = useState<any[]>([])
+  const [courses, setCourses] = useState<any[]>([])
+  const [selectedStudent, setSelectedStudent] = useState<any>(null)
   const router = useRouter()
 
+  // Guard de acceso y carga de usuario
   useEffect(() => {
     const userData = localStorage.getItem("user")
-    if (!userData) {
-      router.push("/login")
-      return
+    if (!userData) { router.push('/login'); return }
+    const parsed = JSON.parse(userData)
+    // Permitir admin, directivo, preceptor y docente
+    if (!['admin', 'directivo', 'preceptor', 'teacher'].includes(parsed.role)) {
+      router.push('/dashboard'); return
     }
-    const parsedUser = JSON.parse(userData)
-    if (!["preceptor", "teacher"].includes(parsedUser.role) && parsedUser.dbRole !== 'directivo') {
-      router.push("/dashboard")
-      return
-    }
-    setUser(parsedUser)
+    setUser(parsed)
   }, [router])
 
+  // Cargar cursos y estudiantes
   useEffect(() => {
-    const userData = localStorage.getItem("user")
-    if (!userData) return
-    const parsedUser = JSON.parse(userData)
     ;(async () => {
       try {
-        const res = await fetch('/api/students', { credentials: 'include' })
-        const data = await res.json().catch(() => ({}))
-        if (res.ok) setStudents(data.students || [])
+        const [cRes, sRes] = await Promise.all([
+          fetch('/api/courses', { credentials: 'include' }),
+          fetch('/api/students', { credentials: 'include' }),
+        ])
+        const cData = await cRes.json().catch(() => ({}))
+        const sData = await sRes.json().catch(() => ({}))
+        if (cRes.ok) setCourses(cData.courses || [])
+        if (sRes.ok) {
+          const map: Record<string, string> = {}
+          ;(cData.courses || []).forEach((c: any) => { map[c.id] = c.nombre })
+          const normalized = (sData.students || []).map((st: any) => {
+            const rel = Array.isArray(st.cursos_estudiantes) ? st.cursos_estudiantes : []
+            const firstCourseId = rel?.[0]?.curso_id || null
+            const courseName = firstCourseId ? (map[firstCourseId] || '—') : '—'
+            return { ...st, course: courseName }
+          })
+          setStudents(normalized)
+        }
       } catch {}
     })()
-  }, [router])
+  }, [])
 
   if (!user) {
     return (
@@ -52,46 +64,32 @@ export default function StudentsPage() {
 
   return (
     <MainLayout>
-      {" "}
-      {/* Usando el nuevo MainLayout */}
       <div className="p-6">
         <div className="space-y-6">
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-foreground">Gestión de Estudiantes</h1>
-            <p className="text-muted-foreground">
-              {user.role === "teacher" ? "Estudiantes de tus cursos" : "Todos los estudiantes"}
-            </p>
+            <h1 className="text-2xl font-bold text-foreground">Estudiantes</h1>
+            <p className="text-muted-foreground">Listado de cuentas con rol Estudiante. Filtra por curso.</p>
           </div>
 
-          <div className="space-y-6">
-            {!selectedStudent && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
               <StudentList
                 userRole={user.role}
                 onSelectStudent={setSelectedStudent}
                 selectedStudentId={selectedStudent?.id}
                 students={students}
+                courses={courses.map((c: any) => c.nombre)}
               />
-            )}
-
-            {selectedStudent && (
-              <div className="space-y-4">
-                <div>
-                  <button
-                    className="text-sm px-3 py-2 border rounded hover:bg-accent"
-                    onClick={() => setSelectedStudent(null)}
-                  >
-                    ← Volver a la lista
-                  </button>
-                </div>
+            </div>
+            <div>
+              {selectedStudent ? (
                 <StudentProfile student={selectedStudent} userRole={user.role} userDbRole={user.dbRole} />
-              </div>
-            )}
-
-            {!selectedStudent && (
-              <div className="bg-card border border-border rounded-lg p-8 text-center">
-                <p className="text-muted-foreground">Selecciona un estudiante para ver su perfil</p>
-              </div>
-            )}
+              ) : (
+                <div className="bg-card border border-border rounded-lg p-8 text-center">
+                  <p className="text-muted-foreground">Selecciona un estudiante para ver su perfil</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

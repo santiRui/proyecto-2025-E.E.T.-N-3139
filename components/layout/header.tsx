@@ -49,6 +49,8 @@ export function Header({ onToggleSidebar }: HeaderProps) {
       teacher: "Docente",
       preceptor: "Preceptor",
       parent: "Padre/Tutor",
+      admin: "Administrador",
+      directivo: "Directivo",
     }
     return roles[role as keyof typeof roles] || role
   }

@@ -7,13 +7,15 @@ export async function GET(_req: NextRequest) {
     const token = _req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'directivo', 'teacher'].includes(session.role)) {
+    if (!['preceptor', 'directivo', 'docente', 'administrador'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 
     const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
     const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY
+    if (!SUPABASE_URL || !KEY) {
       return NextResponse.json({ error: 'Configuración de Supabase incompleta' }, { status: 500 })
     }
 
@@ -25,8 +27,8 @@ export async function GET(_req: NextRequest) {
     }
     const res = await fetch(url, {
       headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: KEY,
+        Authorization: `Bearer ${KEY}`,
         Accept: 'application/json',
       },
       cache: 'no-store',

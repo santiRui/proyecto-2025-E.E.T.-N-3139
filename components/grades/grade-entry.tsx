@@ -57,6 +57,8 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
   }, [courses, selectedCourseId])
 
   const [selectedSubject, setSelectedSubject] = useState("Matemática")
+  const [assignedSubjects, setAssignedSubjects] = useState<Array<{ id: string; nombre: string }>>([])
+  const isTeacher = userRole === "teacher"
   const [gradeType, setGradeType] = useState("")
   const [gradeDate, setGradeDate] = useState("")
   const [gradeWeight, setGradeWeight] = useState("")
@@ -107,6 +109,30 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
       cancelled = true
     }
   }, [isStaffView])
+
+  // Load subjects assigned to the logged-in teacher (global, without course)
+  useEffect(() => {
+    if (!isTeacher) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/subject-teachers?teacher=me', { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (!cancelled) {
+          const list = Array.isArray(data?.subjects) ? data.subjects : []
+          setAssignedSubjects(list)
+          // set default selected subject if available
+          setSelectedSubject((prev) => {
+            if (prev && list.some((s: any) => s.nombre === prev)) return prev
+            return list.length ? list[0].nombre : ""
+          })
+        }
+      } catch {
+        if (!cancelled) setAssignedSubjects([])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isTeacher])
 
   useEffect(() => {
     if (!isStaffView || !selectedCourseId) {
@@ -254,17 +280,32 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
 
             <div className="space-y-2">
               <Label htmlFor="subject">Materia</Label>
-              <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+              <Select
+                value={selectedSubject}
+                onValueChange={setSelectedSubject}
+                disabled={isTeacher && assignedSubjects.length === 0}
+              >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder={isTeacher ? (assignedSubjects.length === 0 ? "No tienes materias asignadas" : undefined) : undefined} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Matemática">Matemática</SelectItem>
-                  <SelectItem value="Lengua">Lengua</SelectItem>
-                  <SelectItem value="Historia">Historia</SelectItem>
-                  <SelectItem value="Ciencias Naturales">Ciencias Naturales</SelectItem>
+                  {isTeacher
+                    ? assignedSubjects.map((s) => (
+                        <SelectItem key={s.id} value={s.nombre}>{s.nombre}</SelectItem>
+                      ))
+                    : (
+                      <>
+                        <SelectItem value="Matemática">Matemática</SelectItem>
+                        <SelectItem value="Lengua">Lengua</SelectItem>
+                        <SelectItem value="Historia">Historia</SelectItem>
+                        <SelectItem value="Ciencias Naturales">Ciencias Naturales</SelectItem>
+                      </>
+                    )}
                 </SelectContent>
               </Select>
+              {isTeacher && assignedSubjects.length === 0 && (
+                <p className="text-xs text-muted-foreground">No tienes materias asignadas. Contacta a un preceptor/directivo/administrador.</p>
+              )}
             </div>
 
             <div className="space-y-2">

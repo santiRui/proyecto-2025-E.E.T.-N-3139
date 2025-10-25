@@ -37,13 +37,19 @@ const sidebarItems: SidebarItem[] = [
     title: "Estudiantes",
     href: "/students",
     icon: Users,
-    roles: ["teacher", "preceptor"],
+    roles: ["teacher", "preceptor", "admin", "directivo"],
   },
   {
     title: "Cursos",
     href: "/courses",
     icon: Calendar,
     roles: ["teacher", "preceptor"],
+  },
+  {
+    title: "Materias",
+    href: "/subjects",
+    icon: BookOpen,
+    roles: ["preceptor", "admin", "directivo"],
   },
   {
     title: "Notas y Asistencia",

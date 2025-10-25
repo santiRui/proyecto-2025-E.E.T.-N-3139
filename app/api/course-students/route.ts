@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'directivo', 'administrador'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 
@@ -62,7 +62,7 @@ export async function DELETE(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'directivo', 'administrador'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 
@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'teacher', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'docente', 'directivo', 'administrador'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 

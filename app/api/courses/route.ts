@@ -8,13 +8,75 @@ function keys() {
     service: process.env.SUPABASE_SERVICE_ROLE_KEY,
   }
 }
+export async function PATCH(req: NextRequest) {
+  try {
+    const token = req.cookies.get(SESSION_COOKIE)?.value
+    if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    const session = await verifySession(token)
+    if (!['preceptor', 'directivo', 'administrador'].includes(session.role)) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+    }
 
+    const { id, nombre, descripcion, anio_lectivo } = await req.json()
+    if (!id) return NextResponse.json({ error: 'Falta id' }, { status: 400 })
+
+    const { url, anon, service } = keys()
+    const key = service || anon
+    if (!url || !key) return NextResponse.json({ error: 'Configuración de Supabase incompleta' }, { status: 500 })
+
+    const body: any = {}
+    if (typeof nombre !== 'undefined') body.nombre = nombre
+    if (typeof descripcion !== 'undefined') body.descripcion = descripcion
+    if (typeof anio_lectivo !== 'undefined') body.anio_lectivo = anio_lectivo
+
+    const api = `${url}/rest/v1/cursos?id=eq.${id}`
+    const res = await fetch(api, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', apikey: key, Authorization: `Bearer ${key}`, Prefer: 'return=representation' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      let msg = 'No se pudo actualizar el curso'
+      try { const d = await res.json(); msg = d?.message || d?.error || msg } catch {}
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
+    const data = await res.json()
+    return NextResponse.json({ ok: true, course: data?.[0] || null })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Error interno' }, { status: 500 })
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const token = req.cookies.get(SESSION_COOKIE)?.value
+    if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    const session = await verifySession(token)
+    if (!['preceptor', 'directivo', 'administrador'].includes(session.role)) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+    }
+
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'Falta id' }, { status: 400 })
+
+    const { url, anon, service } = keys()
+    const key = service || anon
+    if (!url || !key) return NextResponse.json({ error: 'Configuración de Supabase incompleta' }, { status: 500 })
+
+    const api = `${url}/rest/v1/cursos?id=eq.${id}`
+    const res = await fetch(api, { method: 'DELETE', headers: { apikey: key, Authorization: `Bearer ${key}` } })
+    if (!res.ok) return NextResponse.json({ error: 'No se pudo eliminar el curso' }, { status: 400 })
+    return NextResponse.json({ ok: true })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Error interno' }, { status: 500 })
+  }
+}
 export async function GET(req: NextRequest) {
   try {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'docente', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'docente', 'directivo', 'administrador'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 
@@ -53,7 +115,7 @@ export async function POST(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'directivo', 'administrador'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 
