@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'docente', 'directivo', 'administrador'].includes(session.role)) {
+    if (!['preceptor', 'docente', 'teacher', 'directivo', 'administrador'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 
@@ -113,7 +113,42 @@ export async function GET(req: NextRequest) {
     const stuRes = await fetch(stuUrl, { headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' }, cache: 'no-store' })
     if (!stuRes.ok) return NextResponse.json({ error: 'No se pudieron obtener estudiantes' }, { status: 500 })
     const students = await stuRes.json()
-    return NextResponse.json({ ok: true, students })
+
+    const attendanceSelect = encodeURIComponent('estudiante_id,curso_id,total_registros,presentes,llegadas_tarde,ausentes,faltas_justificadas,faltas_equivalentes')
+    const attendanceUrl = `${url}/rest/v1/v_asistencias_resumen?select=${attendanceSelect}&curso_id=eq.${courseId}`
+    let attendanceSummaries: Record<string, any> = {}
+    try {
+      const attendanceRes = await fetch(attendanceUrl, { headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' }, cache: 'no-store' })
+      if (attendanceRes.ok) {
+        const summaryData = await attendanceRes.json().catch(() => [])
+        if (Array.isArray(summaryData)) {
+          summaryData.forEach((summary: any) => {
+            const studentId = summary?.estudiante_id
+            if (!studentId) return
+            const faltasEquivalentes = Number.parseFloat(summary?.faltas_equivalentes ?? '0')
+            attendanceSummaries[studentId] = {
+              estudiante_id: studentId,
+              curso_id: summary?.curso_id ?? courseId,
+              total_registros: Number(summary?.total_registros ?? 0),
+              presentes: Number(summary?.presentes ?? 0),
+              llegadas_tarde: Number(summary?.llegadas_tarde ?? 0),
+              ausentes: Number(summary?.ausentes ?? 0),
+              faltas_justificadas: Number(summary?.faltas_justificadas ?? 0),
+              faltas_equivalentes: Number.isNaN(faltasEquivalentes) ? 0 : faltasEquivalentes,
+            }
+          })
+        }
+      }
+    } catch {}
+
+    const enriched = Array.isArray(students)
+      ? students.map((student: any) => ({
+          ...student,
+          attendance_summary: attendanceSummaries[student.id] || null,
+        }))
+      : students
+
+    return NextResponse.json({ ok: true, students: enriched })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Error interno' }, { status: 500 })
   }
