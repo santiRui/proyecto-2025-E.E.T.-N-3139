@@ -64,6 +64,9 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
   const [gradeWeight, setGradeWeight] = useState("")
   const [observations, setObservations] = useState("")
   const [studentGrades, setStudentGrades] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState("")
+  const [saveSuccess, setSaveSuccess] = useState("")
 
   useEffect(() => {
     if (!isStaffView) return
@@ -187,28 +190,50 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
     }))
   }
 
-  const handleSaveGrades = () => {
-    if (!currentCourse) return
-    // Here you would save the grades to the backend
-    console.log("Saving grades:", {
-      courseId: selectedCourseId,
-      courseName: currentCourse?.nombre,
-      subject: selectedSubject,
-      type: gradeType,
-      date: gradeDate,
-      weight: gradeWeight,
-      observations,
-      grades: studentGrades,
-    })
+  const handleSaveGrades = async () => {
+    if (!currentCourse || !selectedCourseId) return
 
-    // Reset form
-    setGradeType("")
-    setGradeDate("")
-    setGradeWeight("")
-    setObservations("")
-    setStudentGrades({})
+    setSaving(true)
+    setSaveError("")
+    setSaveSuccess("")
 
-    alert("Calificaciones guardadas exitosamente")
+    try {
+      const payload = {
+        courseId: selectedCourseId,
+        subject: selectedSubject,
+        type: gradeType,
+        date: gradeDate,
+        weight: gradeWeight,
+        observations,
+        grades: studentGrades,
+      }
+
+      const res = await fetch('/api/grades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        setSaveError(data?.error || 'No se pudieron guardar las calificaciones')
+        return
+      }
+
+      setSaveSuccess('Calificaciones guardadas exitosamente')
+
+      setGradeType("")
+      setGradeDate("")
+      setGradeWeight("")
+      setObservations("")
+      setStudentGrades({})
+    } catch {
+      setSaveError('No se pudieron guardar las calificaciones')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const getGradeColor = (grade: string) => {
@@ -374,6 +399,8 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
         <CardContent>
           <div className="space-y-4">
             {studentsError && <p className="text-sm text-destructive">{studentsError}</p>}
+            {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+            {saveSuccess && <p className="text-sm text-green-600">{saveSuccess}</p>}
 
             {studentsLoading ? (
               <div className="py-6 text-center text-sm text-muted-foreground">Cargando estudiantes...</div>
@@ -423,9 +450,9 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
             )}
 
             <div className="flex justify-end pt-4">
-              <Button onClick={handleSaveGrades} disabled={!isFormValid()} className="gap-2">
+              <Button onClick={handleSaveGrades} disabled={!isFormValid() || saving} className="gap-2">
                 <Save className="w-4 h-4" />
-                Guardar Calificaciones
+                {saving ? 'Guardando…' : 'Guardar Calificaciones'}
               </Button>
             </div>
           </div>
