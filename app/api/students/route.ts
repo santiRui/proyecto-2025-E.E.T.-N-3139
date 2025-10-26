@@ -40,7 +40,57 @@ export async function GET(_req: NextRequest) {
     }
 
     const data = await res.json()
-    return NextResponse.json({ ok: true, students: data })
+    const students = Array.isArray(data) ? data : []
+    const studentIds = students.map((student: any) => student?.id).filter(Boolean)
+
+    let attendanceSummaries: Record<string, any> = {}
+
+    if (studentIds.length > 0) {
+      const select = encodeURIComponent('estudiante_id,curso_id,total_registros,presentes,llegadas_tarde,ausentes,faltas_justificadas,faltas_equivalentes')
+      const filter = encodeURIComponent(`in.(${studentIds.join(',')})`)
+      const summaryUrl = `${SUPABASE_URL}/rest/v1/v_asistencias_resumen?select=${select}&estudiante_id=${filter}`
+
+      try {
+        const summaryRes = await fetch(summaryUrl, {
+          headers: {
+            apikey: KEY,
+            Authorization: `Bearer ${KEY}`,
+            Accept: 'application/json',
+          },
+          cache: 'no-store',
+        })
+
+        if (summaryRes.ok) {
+          const summaryData = await summaryRes.json().catch(() => [])
+          if (Array.isArray(summaryData)) {
+            summaryData.forEach((summary: any) => {
+              const studentId = summary?.estudiante_id
+              if (!studentId) return
+              const faltasEquivalentes = Number.parseFloat(summary?.faltas_equivalentes ?? '0')
+              attendanceSummaries[studentId] = {
+                estudiante_id: studentId,
+                curso_id: summary?.curso_id ?? null,
+                total_registros: Number(summary?.total_registros ?? 0),
+                presentes: Number(summary?.presentes ?? 0),
+                llegadas_tarde: Number(summary?.llegadas_tarde ?? 0),
+                ausentes: Number(summary?.ausentes ?? 0),
+                faltas_justificadas: Number(summary?.faltas_justificadas ?? 0),
+                faltas_equivalentes: Number.isNaN(faltasEquivalentes) ? 0 : faltasEquivalentes,
+              }
+            })
+          }
+        }
+      } catch {
+        // Ignore attendance fetch failures; students will fallback to null summaries
+      }
+    }
+
+    const enriched = students.map((student: any) => ({
+      ...student,
+      attendance_summary: attendanceSummaries[student.id] || null,
+    }))
+
+    return NextResponse.json({ ok: true, students: enriched })
   } catch (e: any) {
     const message = e?.message || 'Error interno'
     return NextResponse.json({ error: message }, { status: 500 })

@@ -13,6 +13,16 @@ export default function StudentsPage() {
     id: string | null
     nombre: string | null
   }
+  type AttendanceSummary = {
+    estudiante_id: string
+    curso_id: string | null
+    total_registros: number
+    presentes: number
+    llegadas_tarde: number
+    ausentes: number
+    faltas_justificadas: number
+    faltas_equivalentes: number
+  }
   type StudentWithGrades = StudentRow & {
     name: string
     email: string
@@ -22,7 +32,8 @@ export default function StudentsPage() {
     grades: any[]
     average: number | null
     status: string
-    attendance: number | null
+    faltas: number | null
+    attendanceSummary: AttendanceSummary | null
     courseSubjects: CourseSubject[]
   }
 
@@ -131,6 +142,31 @@ export default function StudentsPage() {
               const firstCourseId = rel?.[0]?.curso_id || null
               const courseName = firstCourseId ? (courseNameMap[firstCourseId] || '—') : '—'
               const courseSubjects = firstCourseId ? courseSubjectsMap[firstCourseId] || [] : []
+              const rawSummary = st.attendance_summary
+              const attendanceSummary: AttendanceSummary | null = rawSummary
+                ? {
+                    estudiante_id: rawSummary.estudiante_id,
+                    curso_id: rawSummary.curso_id ?? firstCourseId,
+                    total_registros: Number(rawSummary.total_registros ?? 0),
+                    presentes: Number(rawSummary.presentes ?? 0),
+                    llegadas_tarde: Number(rawSummary.llegadas_tarde ?? 0),
+                    ausentes: Number(rawSummary.ausentes ?? 0),
+                    faltas_justificadas: Number(rawSummary.faltas_justificadas ?? 0),
+                    faltas_equivalentes: Number.parseFloat(rawSummary.faltas_equivalentes ?? '0') || 0,
+                  }
+                : firstCourseId
+                ? {
+                    estudiante_id: st.id,
+                    curso_id: firstCourseId,
+                    total_registros: 0,
+                    presentes: 0,
+                    llegadas_tarde: 0,
+                    ausentes: 0,
+                    faltas_justificadas: 0,
+                    faltas_equivalentes: 0,
+                  }
+                : null
+              const faltasEquivalentes = attendanceSummary ? Number(attendanceSummary.faltas_equivalentes ?? 0) : 0
 
               try {
                 const res = await fetch(`/api/grades?student_id=${encodeURIComponent(st.id)}`, { credentials: 'include' })
@@ -150,7 +186,8 @@ export default function StudentsPage() {
                   grades,
                   average: roundedAverage,
                   status: determineStatus(roundedAverage),
-                  attendance: typeof st.attendance === 'number' ? st.attendance : null,
+                  faltas: faltasEquivalentes,
+                  attendanceSummary,
                   courseSubjects,
                 }
               } catch {
@@ -165,7 +202,8 @@ export default function StudentsPage() {
                   grades: [],
                   average: null,
                   status: 'warning',
-                  attendance: typeof st.attendance === 'number' ? st.attendance : null,
+                  faltas: faltasEquivalentes,
+                  attendanceSummary,
                   courseSubjects,
                 }
               }

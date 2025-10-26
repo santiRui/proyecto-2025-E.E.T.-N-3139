@@ -5,7 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
-import { Calendar, Clock, CheckCircle, XCircle, AlertTriangle, Search } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Calendar, Clock, CheckCircle, XCircle, AlertTriangle, Search, Loader2 } from "lucide-react"
 
 const mockAttendance = {
   student: {
@@ -93,6 +96,33 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
   const [studentsLoading, setStudentsLoading] = useState(false)
   const [studentsError, setStudentsError] = useState("")
   const [studentSearch, setStudentSearch] = useState("")
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [attendanceValues, setAttendanceValues] = useState<Record<string, { status: string; observations?: string }>>({})
+  const [recordsLoading, setRecordsLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState("")
+  const [saveSuccess, setSaveSuccess] = useState("")
+
+  const ATTENDANCE_OPTIONS = useMemo(
+    () => [
+      { value: "presente", label: "Presente" },
+      { value: "llegada_tarde", label: "Llegada tarde (¼ falta)" },
+      { value: "ausente", label: "Ausente (½ falta)" },
+      { value: "falta_justificada", label: "Falta justificada (½ falta)" },
+    ],
+    []
+  )
+
+  const filteredStudents = useMemo(() => {
+    if (!studentSearch.trim()) return students
+    const query = studentSearch.trim().toLowerCase()
+    return students.filter((student) => {
+      const name = student.nombre_completo?.toLowerCase() || ""
+      const email = student.correo?.toLowerCase() || ""
+      const dni = student.dni?.toLowerCase() || ""
+      return name.includes(query) || email.includes(query) || dni.includes(query)
+    })
+  }, [students, studentSearch])
 
   useEffect(() => {
     if (!isStaffView) return
@@ -142,6 +172,7 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
   useEffect(() => {
     if (!isStaffView || !selectedCourseId) {
       setStudents([])
+      setAttendanceValues({})
       return
     }
 
@@ -179,6 +210,136 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
       cancelled = true
     }
   }, [isStaffView, selectedCourseId])
+
+  useEffect(() => {
+    if (!isStaffView || !selectedCourseId) {
+      setAttendanceValues({})
+      return
+    }
+
+    let cancelled = false
+
+    async function loadAttendance() {
+      setRecordsLoading(true)
+      setSaveError("")
+      setSaveSuccess("")
+      try {
+        const query = new URLSearchParams({
+          course_id: selectedCourseId!,
+          date: selectedDate,
+        })
+        const res = await fetch(`/api/attendance?${query.toString()}`, { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (cancelled) return
+        if (!res.ok) {
+          setSaveError(data?.error || 'No se pudieron obtener asistencias del día')
+          setAttendanceValues({})
+          return
+        }
+        const mapped: Record<string, { status: string; observations?: string }> = {}
+        if (Array.isArray(data?.records)) {
+          data.records.forEach((record: any) => {
+            if (record?.estudiante_id && typeof record?.estado === 'string') {
+              mapped[record.estudiante_id] = {
+                status: record.estado,
+                observations: record?.observaciones || undefined,
+              }
+            }
+          })
+        }
+        setAttendanceValues(mapped)
+      } catch {
+        if (!cancelled) {
+          setSaveError('No se pudieron obtener asistencias del día')
+          setAttendanceValues({})
+        }
+      } finally {
+        if (!cancelled) {
+          setRecordsLoading(false)
+        }
+      }
+    }
+
+    loadAttendance()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isStaffView, selectedCourseId, selectedDate])
+
+  const handleStatusChange = (studentId: string, status: string) => {
+    setAttendanceValues((prev) => ({
+      ...prev,
+      [studentId]: {
+        ...(prev[studentId] || {}),
+        status,
+      },
+    }))
+  }
+
+  const handleSaveAttendance = async () => {
+    if (!selectedCourseId) return
+
+    const entries = Object.entries(attendanceValues)
+      .filter(([, value]) => value?.status && ATTENDANCE_OPTIONS.some((opt) => opt.value === value.status))
+
+    if (entries.length === 0) {
+      setSaveError('Selecciona al menos una asistencia para guardar')
+      return
+    }
+
+    setSaving(true)
+    setSaveError("")
+    setSaveSuccess("")
+
+    try {
+      const records: Record<string, { status: string; observations?: string }> = {}
+      entries.forEach(([studentId, value]) => {
+        if (!studentId) return
+        records[studentId] = {
+          status: value.status,
+          observations: value.observations,
+        }
+      })
+
+      const res = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ courseId: selectedCourseId, date: selectedDate, records }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setSaveError(data?.error || 'No se pudieron guardar las asistencias')
+        return
+      }
+
+      setSaveSuccess('Asistencias guardadas correctamente')
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      // recargar registros para reflejar merges
+      setAttendanceValues({})
+      const query = new URLSearchParams({ course_id: selectedCourseId!, date: selectedDate })
+      const reload = await fetch(`/api/attendance?${query.toString()}`, { credentials: 'include' })
+      const reloadData = await reload.json().catch(() => ({}))
+      if (reload.ok && Array.isArray(reloadData?.records)) {
+        const mapped: Record<string, { status: string; observations?: string }> = {}
+        reloadData.records.forEach((record: any) => {
+          if (record?.estudiante_id && typeof record?.estado === 'string') {
+            mapped[record.estudiante_id] = {
+              status: record.estado,
+              observations: record?.observaciones || undefined,
+            }
+          }
+        })
+        setAttendanceValues(mapped)
+      }
+    } catch {
+      setSaveError('No se pudieron guardar las asistencias')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const currentCourse = useMemo(() => {
     if (!selectedCourseId) return null
@@ -373,13 +534,13 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
         <Select
           value={selectedCourseId ?? ""}
           onValueChange={(value) => setSelectedCourseId(value)}
           disabled={courseLoading || courses.length === 0}
         >
-          <SelectTrigger className="w-64">
+          <SelectTrigger className="w-full md:w-64">
             <SelectValue placeholder={courseLoading ? "Cargando cursos..." : "Selecciona un curso"} />
           </SelectTrigger>
           <SelectContent>
@@ -390,6 +551,21 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
             ))}
           </SelectContent>
         </Select>
+
+        <div className="flex items-center gap-2">
+          <Label htmlFor="attendance-date" className="text-sm text-muted-foreground">
+            Fecha
+          </Label>
+          <Input
+            id="attendance-date"
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-full md:w-auto"
+            max={new Date().toISOString().slice(0, 10)}
+          />
+        </div>
+
         {courseLoading && <span className="text-sm text-muted-foreground">Cargando cursos...</span>}
       </div>
 
@@ -412,9 +588,17 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {studentsError && <div className="mb-3 text-sm text-destructive">{studentsError}</div>}
-            {studentsLoading ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">Cargando estudiantes...</div>
+            <div className="space-y-3">
+              {studentsError && <div className="text-sm text-destructive">{studentsError}</div>}
+              {saveError && <div className="text-sm text-destructive">{saveError}</div>}
+              {saveSuccess && <div className="text-sm text-green-600">{saveSuccess}</div>}
+            </div>
+
+            {studentsLoading || recordsLoading ? (
+              <div className="py-6 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Cargando estudiantes y asistencias...
+              </div>
             ) : students.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">Este curso aún no tiene estudiantes asignados.</div>
             ) : (
@@ -429,46 +613,79 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
                   />
                 </div>
 
-                {students
-                  .filter((student) => {
-                    if (!studentSearch.trim()) return true
-                    const query = studentSearch.trim().toLowerCase()
-                    const name = student.nombre_completo?.toLowerCase() || ''
-                    const email = student.correo?.toLowerCase() || ''
-                    const dni = student.dni?.toLowerCase() || ''
-                    return name.includes(query) || email.includes(query) || dni.includes(query)
-                  })
-                  .map((student) => (
-                    <div
-                      key={student.id}
-                      className="flex items-center justify-between p-4 border border-border rounded-lg"
-                    >
-                      <div>
-                        <p className="font-medium">{student.nombre_completo}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {student.dni ? `${student.dni} · ` : ""}
-                          {student.correo || "Sin correo"}
-                        </p>
-                      </div>
-                      <Badge variant="outline" className="text-xs text-muted-foreground">
-                        Asistencia no registrada
-                      </Badge>
-                    </div>
-                  ))}
-
-                {students.length > 0 && students.filter((student) => {
-                  if (!studentSearch.trim()) return true
-                  const query = studentSearch.trim().toLowerCase()
-                  const name = student.nombre_completo?.toLowerCase() || ''
-                  const email = student.correo?.toLowerCase() || ''
-                  const dni = student.dni?.toLowerCase() || ''
-                  return name.includes(query) || email.includes(query) || dni.includes(query)
-                }).length === 0 && (
+                {filteredStudents.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No se encontraron estudiantes.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredStudents.map((student) => {
+                      const current = attendanceValues[student.id]?.status || ""
+                      return (
+                        <div
+                          key={student.id}
+                          className="p-4 border border-border rounded-lg space-y-3"
+                        >
+                          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                            <div>
+                              <p className="font-medium">{student.nombre_completo}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {student.dni ? `${student.dni} · ` : ""}
+                                {student.correo || "Sin correo"}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {ATTENDANCE_OPTIONS.map((option) => (
+                                <Button
+                                  key={option.value}
+                                  variant={current === option.value ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => handleStatusChange(student.id, option.value)}
+                                >
+                                  {option.label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="grid gap-2 md:grid-cols-[1fr,auto] md:items-center">
+                            <Input
+                              placeholder="Observaciones (opcional)"
+                              value={attendanceValues[student.id]?.observations || ""}
+                              onChange={(e) =>
+                                setAttendanceValues((prev) => ({
+                                  ...prev,
+                                  [student.id]: {
+                                    ...(prev[student.id] || {}),
+                                    observations: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                            {current ? (
+                              <Badge variant="outline" className="justify-self-start md:justify-self-end">
+                                {ATTENDANCE_OPTIONS.find((opt) => opt.value === current)?.label || current}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground md:text-right">Sin registro</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
             )}
           </CardContent>
+          {students.length > 0 && (
+            <div className="flex justify-end gap-2 border-t border-border px-6 py-4">
+              <Button variant="outline" onClick={() => setAttendanceValues({})} disabled={saving}>
+                Limpiar seleccionados
+              </Button>
+              <Button onClick={handleSaveAttendance} disabled={saving} className="gap-2">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {saving ? 'Guardando…' : 'Guardar asistencias'}
+              </Button>
+            </div>
+          )}
         </Card>
       )}
     </div>

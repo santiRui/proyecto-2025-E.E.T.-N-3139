@@ -21,6 +21,18 @@ type GradeRecord = {
   observaciones?: string | null
 }
 
+type AttendanceSummary = {
+  estudiante_id: string
+  curso_id: string | null
+  total_registros: number
+  presentes: number
+  llegadas_tarde: number
+  ausentes: number
+  faltas_justificadas: number
+  faltas_equivalentes: number
+  porcentaje_asistencia: number
+}
+
 type StudentWithGrades = {
   id: string
   name: string
@@ -29,11 +41,12 @@ type StudentWithGrades = {
   course: string
   courseId?: string | null
   status: string
-  attendance: number | null
+  faltas: number | null
   average: number | null
   grades: GradeRecord[]
   photo?: string | null
   courseSubjects?: Array<{ id: string | null; nombre: string | null }>
+  attendanceSummary?: AttendanceSummary | null
 }
 
 interface StudentProfileProps {
@@ -300,10 +313,39 @@ export function StudentProfile({ student, userRole, userDbRole }: StudentProfile
             </div>
             <div className="text-center p-3 bg-accent/50 rounded-lg">
               <Clock className="w-5 h-5 text-primary mx-auto mb-1" />
-              <p className="text-sm text-muted-foreground">Asistencia</p>
-              <p className="text-lg font-semibold text-foreground">{student.attendance != null ? `${student.attendance}%` : '—'}</p>
+              <p className="text-sm text-muted-foreground">Faltas acumuladas</p>
+              <p className="text-lg font-semibold text-foreground">{student.faltas != null ? student.faltas.toFixed(2) : '—'}</p>
             </div>
           </div>
+
+          {student.attendanceSummary && (
+            <div className="grid grid-cols-2 gap-4 text-sm bg-accent/30 rounded-lg p-4">
+              <div>
+                <p className="text-muted-foreground">Presentes</p>
+                <p className="font-semibold text-green-600">{student.attendanceSummary.presentes}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Llegadas tarde</p>
+                <p className="font-semibold text-yellow-600">{student.attendanceSummary.llegadas_tarde}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Ausentes</p>
+                <p className="font-semibold text-red-600">{student.attendanceSummary.ausentes}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Justificadas</p>
+                <p className="font-semibold text-muted-foreground">{student.attendanceSummary.faltas_justificadas}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Faltas equivalentes</p>
+                <p className="font-semibold text-foreground">{Number(student.attendanceSummary.faltas_equivalentes).toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Registros</p>
+                <p className="font-semibold text-foreground">{student.attendanceSummary.total_registros}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         <Separator />
