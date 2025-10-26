@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
-import { BookOpen, TrendingUp, Award, AlertCircle, Users } from "lucide-react"
+import { BookOpen, TrendingUp, Award, AlertCircle, Users, Search } from "lucide-react"
 
 type Course = {
   id: string
@@ -56,6 +56,7 @@ export function GradesView({ userRole }: GradesViewProps) {
   const [students, setStudents] = useState<Student[]>([])
   const [studentsLoading, setStudentsLoading] = useState(false)
   const [studentsError, setStudentsError] = useState("")
+  const [studentSearch, setStudentSearch] = useState("")
   const [grades, setGrades] = useState<GradeRecord[]>([])
   const [gradesLoading, setGradesLoading] = useState(false)
   const [gradesError, setGradesError] = useState("")
@@ -303,13 +304,27 @@ export function GradesView({ userRole }: GradesViewProps) {
     return subjectSummaries.filter((summary) => summary.status === 'at_risk')
   }, [subjectSummaries])
 
+  const filteredStudents = useMemo(() => {
+    if (!studentSearch.trim()) return students
+    const query = studentSearch.trim().toLowerCase()
+    return students.filter((student) => {
+      const name = student.nombre_completo?.toLowerCase() || ""
+      const email = student.correo?.toLowerCase() || ""
+      const dni = student.dni?.toLowerCase() || ""
+      return name.includes(query) || email.includes(query) || dni.includes(query)
+    })
+  }, [students, studentSearch])
+
+  const filteredStudentIds = useMemo(() => new Set(filteredStudents.map((s) => s.id)), [filteredStudents])
+
   const gradesByStudent = useMemo(() => {
     return grades.reduce<Record<string, GradeRecord[]>>((acc, grade) => {
+      if (!filteredStudentIds.has(grade.estudiante_id)) return acc
       if (!acc[grade.estudiante_id]) acc[grade.estudiante_id] = []
       acc[grade.estudiante_id].push(grade)
       return acc
     }, {})
-  }, [grades])
+  }, [grades, filteredStudentIds])
 
   const getGradeColor = (grade: number) => {
     if (grade >= 8) return "text-green-600"
@@ -501,14 +516,30 @@ export function GradesView({ userRole }: GradesViewProps) {
               ) : students.length === 0 ? (
                 <div className="text-sm text-muted-foreground">No hay estudiantes asignados.</div>
               ) : (
-                <ul className="space-y-2">
-                  {students.map((student) => (
-                    <li key={student.id} className="flex items-center justify-between">
-                      <span className="font-medium text-sm">{student.nombre_completo}</span>
-                      <Badge variant="outline">{student.dni || "Sin DNI"}</Badge>
-                    </li>
-                  ))}
-                </ul>
+                <div className="space-y-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      className="w-full rounded-md border border-input bg-background px-9 py-2 text-sm"
+                      placeholder="Buscar por nombre, email o DNI..."
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                    />
+                  </div>
+
+                  {filteredStudents.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No se encontraron estudiantes.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {filteredStudents.map((student) => (
+                        <li key={student.id} className="flex items-center justify-between">
+                          <span className="font-medium text-sm">{student.nombre_completo}</span>
+                          <Badge variant="outline">{student.dni || "Sin DNI"}</Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -540,7 +571,18 @@ export function GradesView({ userRole }: GradesViewProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Detalle por Estudiante</CardTitle>
+            <CardTitle className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span>Detalle por Estudiante</span>
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  className="w-full rounded-md border border-input bg-background px-9 py-2 text-sm"
+                  placeholder="Filtrar por nombre, email o DNI..."
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                />
+              </div>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {gradesLoading ? (
@@ -549,6 +591,8 @@ export function GradesView({ userRole }: GradesViewProps) {
               <div className="text-sm text-destructive">{gradesError}</div>
             ) : grades.length === 0 ? (
               <div className="text-sm text-muted-foreground">No hay calificaciones registradas para este curso.</div>
+            ) : filteredStudents.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No se encontraron estudiantes con ese criterio.</div>
             ) : (
               <div className="space-y-4">
                 {Object.entries(gradesByStudent).map(([studentId, studentGrades]) => {

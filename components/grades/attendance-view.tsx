@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
-import { Calendar, Clock, CheckCircle, XCircle, AlertTriangle } from "lucide-react"
+import { Calendar, Clock, CheckCircle, XCircle, AlertTriangle, Search } from "lucide-react"
 
 const mockAttendance = {
   student: {
@@ -92,6 +92,7 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
   const [students, setStudents] = useState<Student[]>([])
   const [studentsLoading, setStudentsLoading] = useState(false)
   const [studentsError, setStudentsError] = useState("")
+  const [studentSearch, setStudentSearch] = useState("")
 
   useEffect(() => {
     if (!isStaffView) return
@@ -418,23 +419,53 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
               <div className="py-6 text-center text-sm text-muted-foreground">Este curso aún no tiene estudiantes asignados.</div>
             ) : (
               <div className="space-y-3">
-                {students.map((student) => (
-                  <div
-                    key={student.id}
-                    className="flex items-center justify-between p-4 border border-border rounded-lg"
-                  >
-                    <div>
-                      <p className="font-medium">{student.nombre_completo}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {student.dni ? `${student.dni} · ` : ""}
-                        {student.correo || "Sin correo"}
-                      </p>
+                <div className="relative max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    className="w-full rounded-md border border-input bg-background px-9 py-2 text-sm"
+                    placeholder="Buscar por nombre, email o DNI..."
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                  />
+                </div>
+
+                {students
+                  .filter((student) => {
+                    if (!studentSearch.trim()) return true
+                    const query = studentSearch.trim().toLowerCase()
+                    const name = student.nombre_completo?.toLowerCase() || ''
+                    const email = student.correo?.toLowerCase() || ''
+                    const dni = student.dni?.toLowerCase() || ''
+                    return name.includes(query) || email.includes(query) || dni.includes(query)
+                  })
+                  .map((student) => (
+                    <div
+                      key={student.id}
+                      className="flex items-center justify-between p-4 border border-border rounded-lg"
+                    >
+                      <div>
+                        <p className="font-medium">{student.nombre_completo}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {student.dni ? `${student.dni} · ` : ""}
+                          {student.correo || "Sin correo"}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-xs text-muted-foreground">
+                        Asistencia no registrada
+                      </Badge>
                     </div>
-                    <Badge variant="outline" className="text-xs text-muted-foreground">
-                      Asistencia no registrada
-                    </Badge>
-                  </div>
-                ))}
+                  ))}
+
+                {students.length > 0 && students.filter((student) => {
+                  if (!studentSearch.trim()) return true
+                  const query = studentSearch.trim().toLowerCase()
+                  const name = student.nombre_completo?.toLowerCase() || ''
+                  const email = student.correo?.toLowerCase() || ''
+                  const dni = student.dni?.toLowerCase() || ''
+                  return name.includes(query) || email.includes(query) || dni.includes(query)
+                }).length === 0 && (
+                  <p className="text-sm text-muted-foreground">No se encontraron estudiantes.</p>
+                )}
               </div>
             )}
           </CardContent>
