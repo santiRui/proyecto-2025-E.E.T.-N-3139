@@ -8,9 +8,27 @@ import { useRouter } from "next/navigation"
 
 export default function StudentsPage() {
   const [user, setUser] = useState<any>(null)
-  const [students, setStudents] = useState<any[]>([])
+  type StudentRow = any
+  type CourseSubject = {
+    id: string | null
+    nombre: string | null
+  }
+  type StudentWithGrades = StudentRow & {
+    name: string
+    email: string
+    phone: string
+    course: string
+    courseId: string | null
+    grades: any[]
+    average: number | null
+    status: string
+    attendance: number | null
+    courseSubjects: CourseSubject[]
+  }
+
+  const [students, setStudents] = useState<StudentWithGrades[]>([])
   const [courses, setCourses] = useState<any[]>([])
-  const [selectedStudent, setSelectedStudent] = useState<any>(null)
+  const [selectedStudent, setSelectedStudent] = useState<StudentWithGrades | null>(null)
   const router = useRouter()
 
   // Guard de acceso y carga de usuario
@@ -27,6 +45,37 @@ export default function StudentsPage() {
 
   // Cargar cursos y estudiantes
   useEffect(() => {
+    let cancelled = false
+
+    const computeAverage = (grades: any[]) => {
+      if (!grades || grades.length === 0) return null
+      let weightedSum = 0
+      let totalWeight = 0
+      let sum = 0
+
+      grades.forEach((grade) => {
+        const value = Number(grade?.calificacion)
+        if (Number.isNaN(value)) return
+        sum += value
+        const weight = grade?.peso == null ? 0 : Number(grade.peso)
+        if (!Number.isNaN(weight) && weight > 0) {
+          weightedSum += value * weight
+          totalWeight += weight
+        }
+      })
+
+      const baseAverage = totalWeight > 0 ? weightedSum / totalWeight : sum / grades.length
+      if (!Number.isFinite(baseAverage)) return null
+      return Math.round(baseAverage * 100) / 100
+    }
+
+    const determineStatus = (average: number | null) => {
+      if (average == null) return 'warning'
+      if (average >= 8) return 'active'
+      if (average >= 6) return 'warning'
+      return 'inactive'
+    }
+
     ;(async () => {
       try {
         const [cRes, sRes] = await Promise.all([
@@ -35,20 +84,108 @@ export default function StudentsPage() {
         ])
         const cData = await cRes.json().catch(() => ({}))
         const sData = await sRes.json().catch(() => ({}))
-        if (cRes.ok) setCourses(cData.courses || [])
+
+        if (!cancelled && cRes.ok) setCourses(cData.courses || [])
+
         if (sRes.ok) {
-          const map: Record<string, string> = {}
-          ;(cData.courses || []).forEach((c: any) => { map[c.id] = c.nombre })
-          const normalized = (sData.students || []).map((st: any) => {
-            const rel = Array.isArray(st.cursos_estudiantes) ? st.cursos_estudiantes : []
-            const firstCourseId = rel?.[0]?.curso_id || null
-            const courseName = firstCourseId ? (map[firstCourseId] || '—') : '—'
-            return { ...st, course: courseName }
-          })
-          setStudents(normalized)
+          const courseNameMap: Record<string, string> = {}
+          ;(cData.courses || []).forEach((c: any) => { courseNameMap[c.id] = c.nombre })
+
+          const rawStudents = Array.isArray(sData.students) ? (sData.students as StudentRow[]) : []
+
+          const uniqueCourseIds = Array.from(
+            new Set(
+              rawStudents
+                .map((st: StudentRow) => {
+                  const rel = Array.isArray(st.cursos_estudiantes) ? st.cursos_estudiantes : []
+                  return rel?.[0]?.curso_id || null
+                })
+                .filter((id): id is string => Boolean(id))
+            )
+          )
+
+          const courseSubjectsEntries = await Promise.all(
+            uniqueCourseIds.map(async (courseId) => {
+              try {
+                const res = await fetch(`/api/course-subjects?course_id=${encodeURIComponent(courseId)}`, { credentials: 'include' })
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok) throw new Error('course subjects fetch failed')
+                const subjects = Array.isArray(data?.subjects)
+                  ? (data.subjects as any[]).map((s) => ({ id: s.id ?? s.materia_id ?? null, nombre: s.nombre ?? null }))
+                  : []
+                return [courseId, subjects] as const
+              } catch {
+                return [courseId, [] as CourseSubject[]] as const
+              }
+            })
+          )
+
+          const courseSubjectsMap = courseSubjectsEntries.reduce<Record<string, CourseSubject[]>>((acc, [courseId, subjects]) => {
+            acc[courseId] = subjects
+            return acc
+          }, {})
+
+          const normalized = await Promise.all(
+            rawStudents.map(async (st: StudentRow) => {
+              const rel = Array.isArray(st.cursos_estudiantes) ? st.cursos_estudiantes : []
+              const firstCourseId = rel?.[0]?.curso_id || null
+              const courseName = firstCourseId ? (courseNameMap[firstCourseId] || '—') : '—'
+              const courseSubjects = firstCourseId ? courseSubjectsMap[firstCourseId] || [] : []
+
+              try {
+                const res = await fetch(`/api/grades?student_id=${encodeURIComponent(st.id)}`, { credentials: 'include' })
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok) throw new Error('grades fetch failed')
+                const grades = Array.isArray(data?.grades) ? data.grades : []
+                const average = computeAverage(grades)
+                const roundedAverage = average == null ? null : Math.round(average * 100) / 100
+                return {
+                  ...st,
+                  id: st.id,
+                  name: st.nombre_completo || st.name || 'Sin nombre',
+                  email: st.correo || st.email || '',
+                  phone: st.telefono || st.phone || '',
+                  course: courseName,
+                  courseId: firstCourseId,
+                  grades,
+                  average: roundedAverage,
+                  status: determineStatus(roundedAverage),
+                  attendance: typeof st.attendance === 'number' ? st.attendance : null,
+                  courseSubjects,
+                }
+              } catch {
+                return {
+                  ...st,
+                  id: st.id,
+                  name: st.nombre_completo || st.name || 'Sin nombre',
+                  email: st.correo || st.email || '',
+                  phone: st.telefono || st.phone || '',
+                  course: courseName,
+                  courseId: firstCourseId,
+                  grades: [],
+                  average: null,
+                  status: 'warning',
+                  attendance: typeof st.attendance === 'number' ? st.attendance : null,
+                  courseSubjects,
+                }
+              }
+            })
+          )
+
+          if (!cancelled) {
+            setStudents(normalized)
+            setSelectedStudent((prev: StudentWithGrades | null) => {
+              if (!prev) return prev
+              return normalized.find((st) => st.id === prev.id) || prev
+            })
+          }
         }
       } catch {}
     })()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   if (!user) {

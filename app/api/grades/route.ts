@@ -103,11 +103,11 @@ export async function GET(req: NextRequest) {
 
     if (isStaff) {
       const courseId = params.get('course_id')
-      if (!courseId) {
-        return NextResponse.json({ error: 'Falta course_id' }, { status: 400 })
-      }
-      query.set('curso_id', `eq.${courseId}`)
       const studentId = params.get('student_id')
+      if (!courseId && !studentId) {
+        return NextResponse.json({ error: 'Falta course_id o student_id' }, { status: 400 })
+      }
+      if (courseId) query.set('curso_id', `eq.${courseId}`)
       if (studentId) query.set('estudiante_id', `eq.${studentId}`)
     } else {
       if (session.role === 'estudiante') {
