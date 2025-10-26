@@ -50,6 +50,7 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
   const [students, setStudents] = useState<Student[]>([])
   const [studentsLoading, setStudentsLoading] = useState(false)
   const [studentsError, setStudentsError] = useState("")
+  const [studentSearch, setStudentSearch] = useState("")
 
   const currentCourse = useMemo(() => {
     if (!selectedCourseId) return null
@@ -411,41 +412,62 @@ export function GradeEntry({ userRole }: GradeEntryProps) {
                   : "Selecciona un curso para comenzar."}
               </div>
             ) : (
-              <div className="space-y-4">
-                {students.map((student) => (
-                  <div key={student.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
-                        <span className="text-sm font-medium text-primary">
-                          {student.nombre_completo
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="font-medium">{student.nombre_completo}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {student.dni ? `${student.dni} · ` : ""}
-                          {student.correo || "Sin correo"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min="1"
-                        max="10"
-                        step="0.1"
-                        placeholder="Nota"
-                        className={`w-20 text-center ${getGradeColor(studentGrades[student.id] || "")}`}
-                        value={studentGrades[student.id] || ""}
-                        onChange={(e) => handleGradeChange(student.id, e.target.value)}
-                      />
-                      <span className="text-sm text-muted-foreground">/10</span>
-                    </div>
+              <div className="space-y-2">
+                <h4 className="font-semibold text-foreground">Cargar Calificaciones {currentCourse ? `- ${currentCourse.nombre}` : ""}</h4>
+                {studentsLoading && <p className="text-sm text-muted-foreground">Cargando estudiantes...</p>}
+                {studentsError && <p className="text-sm text-destructive">{studentsError}</p>}
+
+                {!studentsLoading && students.length > 0 && (
+                  <div className="relative max-w-sm">
+                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="student-search"
+                      placeholder="Buscar por nombre, email o DNI..."
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                      className="pl-9"
+                    />
                   </div>
-                ))}
+                )}
+
+                <div className="space-y-3">
+                  {students
+                    .filter((student) => {
+                      if (!studentSearch.trim()) return true
+                      const query = studentSearch.trim().toLowerCase()
+                      const name = student.nombre_completo?.toLowerCase() || ""
+                      const email = student.correo?.toLowerCase() || ""
+                      const dni = student.dni?.toLowerCase() || ""
+                      return name.includes(query) || email.includes(query) || dni.includes(query)
+                    })
+                    .map((student) => (
+                      <div key={student.id} className="p-3 border border-border rounded-lg flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="space-y-1">
+                          <p className="font-medium text-foreground flex items-center gap-2">
+                            <Users className="w-4 h-4 text-primary" />
+                            {student.nombre_completo}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {student.dni ? `${student.dni} · ` : ""}
+                            {student.correo || "Sin correo"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min="1"
+                            max="10"
+                            step="0.1"
+                            placeholder="Nota"
+                            className={`w-20 text-center ${getGradeColor(studentGrades[student.id] || "")}`}
+                            value={studentGrades[student.id] || ""}
+                            onChange={(e) => handleGradeChange(student.id, e.target.value)}
+                          />
+                          <span className="text-sm text-muted-foreground">/10</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </div>
             )}
 

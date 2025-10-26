@@ -25,6 +25,7 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
   const sourceStudents = Array.isArray(students) && students.length > 0
     ? students.map((s) => {
         const average = typeof s.average === 'number' ? Math.round(s.average * 100) / 100 : null
+        const faltas = typeof s.faltas === 'number' ? Math.round(s.faltas * 100) / 100 : null
         return {
           ...s,
           id: s.id,
@@ -33,7 +34,7 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
           email: s.email || s.correo || '',
           phone: s.phone || s.telefono || '',
           average,
-          attendance: typeof s.attendance === 'number' ? s.attendance : 0,
+          faltas,
           status: s.status || 'active',
           photo: s.photo || null,
         }
@@ -74,6 +75,13 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
       default:
         return status
     }
+  }
+
+  const getFaltasColor = (faltas: number | null) => {
+    if (faltas == null) return "text-muted-foreground"
+    if (faltas <= 1) return "text-green-600"
+    if (faltas <= 3) return "text-yellow-600"
+    return "text-red-600"
   }
 
   return (
@@ -159,11 +167,9 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
                     </span>
                   </div>
                   <div className="text-sm">
-                    <span className="text-muted-foreground">Asistencia: </span>
-                    <span
-                      className={`font-semibold ${student.attendance >= 90 ? "text-green-600" : student.attendance >= 80 ? "text-yellow-600" : "text-red-600"}`}
-                    >
-                      {student.attendance}%
+                    <span className="text-muted-foreground">Faltas: </span>
+                    <span className={`font-semibold ${getFaltasColor(student.faltas)}`}>
+                      {typeof student.faltas === 'number' ? student.faltas.toFixed(2) : '—'}
                     </span>
                   </div>
                 </div>
