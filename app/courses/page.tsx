@@ -295,7 +295,7 @@ export default function CoursesPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Estudiantes del curso</CardTitle>
-                  {(user.role === 'preceptor' || user.dbRole === 'directivo') && (
+                  {(user.role === 'preceptor' || user.dbRole === 'directivo' || user.dbRole === 'administrador' || user.role === 'admin') && (
                     <Dialog open={assignOpen} onOpenChange={(o) => { setAssignOpen(o); if (!o) { setSearch(""); setSearchResults([]); setSelectedStudentId(""); setAssignError("") } }}>
                       <DialogTrigger asChild>
                         <Button>Asignar estudiante</Button>
@@ -394,7 +394,7 @@ export default function CoursesPage() {
                         <div className="font-medium">{s.nombre_completo}</div>
                         <div className="text-sm text-muted-foreground">{s.dni} · {s.correo}</div>
                       </div>
-                      {(user.role === 'preceptor' || user.dbRole === 'directivo') && (
+                      {(user.role === 'preceptor' || user.dbRole === 'directivo' || user.dbRole === 'administrador' || user.role === 'admin') && (
                         <Button
                           variant="outline"
                           onClick={async () => {
@@ -421,7 +421,7 @@ export default function CoursesPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Docentes del curso</CardTitle>
-                  {(user.role === 'preceptor' || user.dbRole === 'directivo') && (
+                  {(user.role === 'preceptor' || user.dbRole === 'directivo' || user.dbRole === 'administrador' || user.role === 'admin') && (
                     <Dialog open={assignTeacherOpen} onOpenChange={(o) => { setAssignTeacherOpen(o); if (!o) { setTeacherQuery(""); setTeacherResults([]); setSelectedTeacherId("") } }}>
                       <DialogTrigger asChild>
                         <Button>Asignar docente</Button>

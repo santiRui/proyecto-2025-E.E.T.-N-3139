@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'teacher', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'teacher', 'directivo', 'administrador', 'admin'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 
@@ -25,12 +25,24 @@ export async function GET(req: NextRequest) {
     const key = service || anon
     if (!url || !key) return NextResponse.json({ error: 'Configuración de Supabase incompleta' }, { status: 500 })
 
-    // 1) Obtener relaciones curso-docentes
+    // 1) Obtener relaciones curso-docentes desde cursos_docentes
     const relUrl = `${url}/rest/v1/cursos_docentes?select=docente_id&curso_id=eq.${courseId}`
     const relRes = await fetch(relUrl, { headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' }, cache: 'no-store' })
     if (!relRes.ok) return NextResponse.json({ error: 'No se pudieron obtener relaciones' }, { status: 500 })
     const relRows: Array<{ docente_id: string }> = await relRes.json()
-    const ids = relRows.map(r => r.docente_id).filter(Boolean)
+
+    // 1b) Obtener docentes asignados vía materias_docentes (curso_id + materia)
+    const mdUrl = `${url}/rest/v1/materias_docentes?select=docente_id&curso_id=eq.${courseId}`
+    const mdRes = await fetch(mdUrl, { headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' }, cache: 'no-store' })
+    if (!mdRes.ok) return NextResponse.json({ error: 'No se pudieron obtener relaciones de materias' }, { status: 500 })
+    const mdRows: Array<{ docente_id: string }> = await mdRes.json()
+
+    const seen = new Set<string>()
+    const ids: string[] = []
+    ;[...relRows, ...mdRows].forEach((r) => {
+      const id = r?.docente_id
+      if (id && !seen.has(id)) { seen.add(id); ids.push(id) }
+    })
     if (ids.length === 0) return NextResponse.json({ ok: true, teachers: [] })
 
     // 2) Traer perfiles de docentes
@@ -50,7 +62,7 @@ export async function POST(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'directivo', 'administrador', 'admin'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 
@@ -91,7 +103,7 @@ export async function DELETE(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'directivo', 'administrador', 'admin'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 

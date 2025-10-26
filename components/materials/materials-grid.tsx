@@ -1,12 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useToast } from "@/components/ui/use-toast"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,95 +37,10 @@ import {
   Eye,
 } from "lucide-react"
 
-const mockMaterials = [
-  {
-    id: 1,
-    title: "Guía de Ejercicios - Álgebra Lineal",
-    description: "Ejercicios prácticos para reforzar conceptos de álgebra lineal y matrices.",
-    subject: "Matemática",
-    course: "5° Año A",
-    type: "document",
-    fileType: "pdf",
-    uploadDate: "2025-01-20",
-    uploadedBy: "Prof. García",
-    downloads: 45,
-    size: "2.3 MB",
-    tags: ["ejercicios", "álgebra", "matrices"],
-  },
-  {
-    id: 2,
-    title: "Video Tutorial - Funciones Cuadráticas",
-    description: "Explicación detallada sobre funciones cuadráticas con ejemplos prácticos.",
-    subject: "Matemática",
-    course: "4° Año B",
-    type: "video",
-    fileType: "mp4",
-    uploadDate: "2025-01-18",
-    uploadedBy: "Prof. García",
-    downloads: 32,
-    size: "125 MB",
-    tags: ["video", "funciones", "cuadráticas"],
-  },
-  {
-    id: 3,
-    title: "Análisis de Texto - Martín Fierro",
-    description: "Análisis literario completo del Martín Fierro con guía de preguntas.",
-    subject: "Lengua",
-    course: "6° Año A",
-    type: "document",
-    fileType: "docx",
-    uploadDate: "2025-01-15",
-    uploadedBy: "Prof. Martínez",
-    downloads: 28,
-    size: "1.8 MB",
-    tags: ["literatura", "análisis", "martín fierro"],
-  },
-  {
-    id: 4,
-    title: "Presentación - Revolución Industrial",
-    description: "Presentación interactiva sobre la Revolución Industrial y sus consecuencias.",
-    subject: "Historia",
-    course: "5° Año A",
-    type: "presentation",
-    fileType: "pptx",
-    uploadDate: "2025-01-12",
-    uploadedBy: "Prof. López",
-    downloads: 38,
-    size: "15.2 MB",
-    tags: ["historia", "revolución", "industrial"],
-  },
-  {
-    id: 5,
-    title: "Laboratorio Virtual - Química Orgánica",
-    description: "Simulador interactivo para experimentos de química orgánica.",
-    subject: "Ciencias Naturales",
-    course: "6° Año A",
-    type: "link",
-    fileType: "url",
-    uploadDate: "2025-01-10",
-    uploadedBy: "Prof. Rodríguez",
-    downloads: 52,
-    size: "-",
-    tags: ["laboratorio", "química", "simulador"],
-  },
-  {
-    id: 6,
-    title: "Ejercicios de Programación - Python",
-    description: "Conjunto de ejercicios prácticos para aprender programación en Python.",
-    subject: "Informática",
-    course: "5° Año A",
-    type: "document",
-    fileType: "zip",
-    uploadDate: "2025-01-08",
-    uploadedBy: "Prof. Silva",
-    downloads: 41,
-    size: "5.7 MB",
-    tags: ["programación", "python", "ejercicios"],
-  },
-]
+// data now comes from API
 
-const subjects = ["Todas las materias", "Matemática", "Lengua", "Historia", "Ciencias Naturales", "Informática"]
-const courses = ["Todos los cursos", "3° Año C", "4° Año B", "5° Año A", "6° Año A"]
+const defaultSubjects = ["Todas las materias", "Matemática", "Lengua", "Historia", "Ciencias Naturales", "Informática"]
+const defaultCourses = ["Todos los cursos", "3° Año C", "4° Año B", "5° Año A", "6° Año A"]
 const materialTypes = ["Todos los tipos", "document", "video", "presentation", "link"]
 
 interface MaterialsGridProps {
@@ -138,6 +54,118 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
   const [selectedType, setSelectedType] = useState("Todos los tipos")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [materialToDelete, setMaterialToDelete] = useState<any>(null)
+  const { toast } = useToast()
+
+  const [materials, setMaterials] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+
+  const isTeacher = userRole === "teacher"
+  const isStudent = userRole === "student" || userRole === "estudiante"
+  const [assignedSubjects, setAssignedSubjects] = useState<string[]>([])
+  const [assignedCourses, setAssignedCourses] = useState<string[]>([])
+  const [studentCourseId, setStudentCourseId] = useState<string | null>(null)
+  const [studentCourseName, setStudentCourseName] = useState<string>("")
+  const [studentSubjectNames, setStudentSubjectNames] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!isTeacher) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [subRes, crsRes] = await Promise.all([
+          fetch('/api/subject-teachers?teacher=me', { credentials: 'include' }),
+          fetch('/api/teacher-courses?teacher=me', { credentials: 'include' }),
+        ])
+        const subData = await subRes.json().catch(() => ({}))
+        const crsData = await crsRes.json().catch(() => ({}))
+        if (!cancelled) {
+          const subs = Array.isArray(subData?.subjects) ? subData.subjects.map((s: any) => s?.nombre).filter(Boolean) : []
+          const crss = Array.isArray(crsData?.courses) ? crsData.courses.map((c: any) => c?.nombre).filter(Boolean) : []
+          setAssignedSubjects(subs)
+          setAssignedCourses(crss)
+          setSelectedSubject((prev) => (prev !== "Todas las materias" && subs.includes(prev) ? prev : "Todas las materias"))
+          setSelectedCourse((prev) => (prev !== "Todos los cursos" && crss.includes(prev) ? prev : "Todos los cursos"))
+        }
+      } catch {
+        if (!cancelled) { setAssignedSubjects([]); setAssignedCourses([]) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isTeacher])
+
+  const subjectOptions = useMemo(() => {
+    if (isTeacher) return ["Todas las materias", ...assignedSubjects]
+    if (isStudent) {
+      const fallback = Array.from(new Set((materials || []).map((m: any) => m?.subject).filter(Boolean))) as string[]
+      const list = (studentSubjectNames && studentSubjectNames.length > 0) ? studentSubjectNames : fallback
+      return ["Todas las materias", ...list]
+    }
+    return defaultSubjects
+  }, [isTeacher, isStudent, assignedSubjects, studentSubjectNames, materials])
+
+  const courseOptions = useMemo(() => {
+    if (isTeacher) return ["Todos los cursos", ...assignedCourses]
+    if (isStudent) return studentCourseName ? [studentCourseName] : []
+    return defaultCourses
+  }, [isTeacher, isStudent, assignedCourses, studentCourseName])
+
+  // Load student's course and its subjects
+  useEffect(() => {
+    if (!isStudent) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const cr = await fetch('/api/student-course', { credentials: 'include' })
+        const crData = await cr.json().catch(() => ({}))
+        if (!cr.ok) throw new Error(crData?.error || 'No se pudo obtener curso asignado')
+        const c = crData?.course
+        if (!c?.id) throw new Error('Sin curso asignado')
+        if (cancelled) return
+        setStudentCourseId(c.id)
+        setStudentCourseName(c.nombre)
+        setSelectedCourse(c.nombre)
+
+        const sr = await fetch(`/api/course-subjects?mode=assigned&course_id=${encodeURIComponent(c.id)}`, { credentials: 'include' })
+        const srData = await sr.json().catch(() => ({}))
+        if (!sr.ok) throw new Error(srData?.error || 'No se pudieron obtener materias del curso')
+        const names = Array.isArray(srData?.subjects) ? srData.subjects.map((s: any) => s?.nombre).filter(Boolean) : []
+        if (cancelled) return
+        setStudentSubjectNames(names)
+        setSelectedSubject((prev) => (prev !== "Todas las materias" && names.includes(prev) ? prev : "Todas las materias"))
+      } catch (e: any) {
+        if (!cancelled) {
+          setStudentCourseId(null)
+          setStudentCourseName("")
+          setStudentSubjectNames([])
+          toast({ title: 'Atención', description: e?.message || 'No tienes curso asignado', variant: 'destructive' as any })
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isStudent])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError("")
+    ;(async () => {
+      try {
+        const res = await fetch('/api/materials', { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.error || 'No se pudieron obtener materiales')
+        if (!cancelled) setMaterials(Array.isArray(data?.materials) ? data.materials : [])
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e?.message || 'Error al cargar materiales')
+          toast({ title: 'Error', description: e?.message || 'No se pudieron cargar los materiales', variant: 'destructive' as any })
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   const getFileIcon = (fileType: string, type: string) => {
     if (type === "video") return <Video className="w-5 h-5 text-red-500" />
@@ -181,29 +209,46 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
     return colors[type as keyof typeof colors] || "bg-muted text-muted-foreground"
   }
 
-  const filteredMaterials = mockMaterials.filter((material) => {
+  const filteredMaterials = materials.filter((material) => {
     const matchesSearch =
       material.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       material.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      material.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+      material.tags.some((tag: string) => tag.toLowerCase().includes(searchTerm.toLowerCase()))
 
-    const matchesSubject = selectedSubject === "Todas las materias" || material.subject === selectedSubject
-    const matchesCourse = selectedCourse === "Todos los cursos" || material.course === selectedCourse
+    const matchesSubject = (selectedSubject === "Todas las materias" || material.subject === selectedSubject) && (!isTeacher || assignedSubjects.includes(material.subject))
+    const matchesCourse = (selectedCourse === "Todos los cursos" || material.course === selectedCourse) && (!isTeacher || assignedCourses.includes(material.course))
     const matchesType = selectedType === "Todos los tipos" || material.type === selectedType
 
     return matchesSearch && matchesSubject && matchesCourse && matchesType
   })
 
   const handleDownload = (material: any) => {
-    // Simulate download
-    console.log("Downloading:", material.title)
-    alert(`Descargando: ${material.title}`)
+    const url = material?.file_url
+    if (!url) {
+      toast({ title: 'Archivo no disponible', description: 'Este material no tiene un archivo asociado', variant: 'destructive' as any })
+      return
+    }
+    try {
+      const a = document.createElement('a')
+      a.href = url
+      a.target = '_blank'
+      a.rel = 'noopener'
+      const baseName = (material?.title || 'material').toString().trim().replace(/\s+/g, '_')
+      a.download = baseName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      toast({ title: 'Descarga iniciada', description: material.title })
+    } catch (e: any) {
+      toast({ title: 'No se pudo iniciar la descarga', description: e?.message || 'Intenta nuevamente', variant: 'destructive' as any })
+    }
   }
 
   const handleOpenLink = (material: any) => {
-    // Simulate opening external link
-    console.log("Opening link:", material.title)
-    alert(`Abriendo enlace: ${material.title}`)
+    toast({
+      title: "Abriendo enlace",
+      description: material.title,
+    })
   }
 
   const canManageMaterial = (material: any) => {
@@ -212,8 +257,7 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
   }
 
   const handleEdit = (material: any) => {
-    console.log("Editing material:", material.title)
-    alert(`Editando: ${material.title}`)
+    toast({ title: "Editar material", description: material.title })
   }
 
   const handleDeleteClick = (material: any) => {
@@ -223,16 +267,14 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
 
   const handleDeleteConfirm = () => {
     if (materialToDelete) {
-      console.log("Deleting material:", materialToDelete.title)
-      alert(`Material eliminado: ${materialToDelete.title}`)
+      toast({ title: "Material eliminado", description: materialToDelete.title })
       setDeleteDialogOpen(false)
       setMaterialToDelete(null)
     }
   }
 
   const handleViewDetails = (material: any) => {
-    console.log("Viewing details:", material.title)
-    alert(`Viendo detalles de: ${material.title}`)
+    toast({ title: "Detalles", description: material.title })
   }
 
   return (
@@ -262,7 +304,7 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {subjects.map((subject) => (
+                {subjectOptions.map((subject) => (
                   <SelectItem key={subject} value={subject}>
                     {subject}
                   </SelectItem>
@@ -270,12 +312,12 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
               </SelectContent>
             </Select>
 
-            <Select value={selectedCourse} onValueChange={setSelectedCourse}>
+            <Select value={selectedCourse} onValueChange={setSelectedCourse} disabled={isStudent}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {courses.map((course) => (
+                {courseOptions.map((course) => (
                   <SelectItem key={course} value={course}>
                     {course}
                   </SelectItem>
@@ -300,13 +342,19 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
       </Card>
 
       {/* Materials Grid */}
+      {loading && (
+        <Card>
+          <CardContent className="text-center py-12">Cargando materiales...</CardContent>
+        </Card>
+      )}
+      {!loading && filteredMaterials.length > 0 && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredMaterials.map((material) => (
+        {filteredMaterials.map((material: any) => (
           <Card key={material.id} className="hover:shadow-md transition-shadow">
             <CardHeader>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  {getFileIcon(material.fileType, material.type)}
+                  {getFileIcon(material.file_type || material.fileType, material.type)}
                   <Badge className={getTypeColor(material.type)}>{getTypeLabel(material.type)}</Badge>
                 </div>
                 <div className="flex items-center gap-2">
@@ -345,7 +393,7 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
               <p className="text-sm text-muted-foreground text-pretty leading-relaxed">{material.description}</p>
 
               <div className="flex flex-wrap gap-1">
-                {material.tags.map((tag, index) => (
+                {material.tags.map((tag: string, index: number) => (
                   <Badge key={index} variant="secondary" className="text-xs">
                     {tag}
                   </Badge>
@@ -355,33 +403,33 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
               <div className="space-y-2 text-xs text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <BookOpen className="w-3 h-3" />
-                  <span>{material.course}</span>
+                  <span>{material.course || 'Sin curso'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <User className="w-3 h-3" />
-                  <span>{material.uploadedBy}</span>
+                  <span>{material.uploadedBy || '—'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Calendar className="w-3 h-3" />
-                  <span>{material.uploadDate}</span>
+                  <span>{new Date(material.uploadDate).toLocaleString()}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Download className="w-3 h-3" />
-                    <span>{material.downloads} descargas</span>
+                    <span>Descargar</span>
                   </div>
-                  <span>{material.size}</span>
+                  <span>{material.size_bytes ? `${(material.size_bytes/1024/1024).toFixed(2)} MB` : '-'}</span>
                 </div>
               </div>
 
               <div className="flex gap-2 pt-2">
-                {material.type === "link" ? (
+                {material.type === "link" && material.file_url ? (
                   <Button size="sm" className="flex-1" onClick={() => handleOpenLink(material)}>
                     <ExternalLink className="w-4 h-4 mr-2" />
                     Abrir
                   </Button>
                 ) : (
-                  <Button size="sm" className="flex-1" onClick={() => handleDownload(material)}>
+                  <Button size="sm" className="flex-1" onClick={() => handleDownload(material)} disabled={!material.file_url}>
                     <Download className="w-4 h-4 mr-2" />
                     Descargar
                   </Button>
@@ -391,8 +439,9 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
           </Card>
         ))}
       </div>
+      )}
 
-      {filteredMaterials.length === 0 && (
+      {!loading && filteredMaterials.length === 0 && (
         <Card>
           <CardContent className="text-center py-12">
             <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
