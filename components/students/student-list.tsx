@@ -23,17 +23,21 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
   const [selectedCourse, setSelectedCourse] = useState("Todos los cursos")
 
   const sourceStudents = Array.isArray(students) && students.length > 0
-    ? students.map((s) => ({
-        id: s.id,
-        name: s.nombre_completo || s.name || 'Sin nombre',
-        course: s.course || '—',
-        email: s.correo || s.email || '',
-        phone: s.telefono || s.phone || '',
-        average: s.average ?? 0,
-        attendance: s.attendance ?? 0,
-        status: s.status || 'active',
-        photo: s.photo || null,
-      }))
+    ? students.map((s) => {
+        const average = typeof s.average === 'number' ? Math.round(s.average * 100) / 100 : null
+        return {
+          ...s,
+          id: s.id,
+          name: s.name || s.nombre_completo || 'Sin nombre',
+          course: s.course || '—',
+          email: s.email || s.correo || '',
+          phone: s.phone || s.telefono || '',
+          average,
+          attendance: typeof s.attendance === 'number' ? s.attendance : 0,
+          status: s.status || 'active',
+          photo: s.photo || null,
+        }
+      })
     : []
 
   const courseOptions = ["Todos los cursos", ...((courses && courses.length > 0) ? courses : defaultCourses)]
@@ -141,9 +145,17 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
                   <div className="text-sm">
                     <span className="text-muted-foreground">Promedio: </span>
                     <span
-                      className={`font-semibold ${student.average >= 8 ? "text-green-600" : student.average >= 6 ? "text-yellow-600" : "text-red-600"}`}
+                      className={`font-semibold ${
+                        typeof student.average === 'number'
+                          ? student.average >= 8
+                            ? "text-green-600"
+                            : student.average >= 6
+                            ? "text-yellow-600"
+                            : "text-red-600"
+                          : "text-muted-foreground"
+                      }`}
                     >
-                      {student.average}
+                      {typeof student.average === 'number' ? student.average.toFixed(2) : "—"}
                     </span>
                   </div>
                   <div className="text-sm">

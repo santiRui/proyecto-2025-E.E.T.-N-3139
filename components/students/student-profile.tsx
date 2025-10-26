@@ -6,12 +6,38 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { User, Mail, Phone, MapPin, Calendar, BookOpen, TrendingUp, Clock, Plus, Trash2 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 
+type GradeRecord = {
+  id: string
+  materia_nombre: string | null
+  tipo_evaluacion: string | null
+  fecha: string | null
+  peso: number | null
+  calificacion: number | null
+  observaciones?: string | null
+}
+
+type StudentWithGrades = {
+  id: string
+  name: string
+  email: string
+  phone: string
+  course: string
+  courseId?: string | null
+  status: string
+  attendance: number | null
+  average: number | null
+  grades: GradeRecord[]
+  photo?: string | null
+  courseSubjects?: Array<{ id: string | null; nombre: string | null }>
+}
+
 interface StudentProfileProps {
-  student: any
+  student: StudentWithGrades
   userRole: string
   userDbRole?: string
 }
@@ -24,6 +50,33 @@ export function StudentProfile({ student, userRole, userDbRole }: StudentProfile
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [searching, setSearching] = useState(false)
+  const [courseSubjects, setCourseSubjects] = useState<Array<{ id: string | null; nombre: string | null }>>(
+    () => (Array.isArray(student.courseSubjects) ? student.courseSubjects : [])
+  )
+
+  useEffect(() => {
+    setCourseSubjects(Array.isArray(student.courseSubjects) ? student.courseSubjects : [])
+
+    const courseId = student.courseId ?? null
+    if (!courseId) return
+
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/course-subjects?course_id=${encodeURIComponent(String(courseId))}`, {
+          credentials: 'include',
+        })
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) {
+          const subjects = Array.isArray(data?.subjects)
+            ? data.subjects.map((s: any) => ({ id: s.id ?? s.materia_id ?? null, nombre: s.nombre ?? null }))
+            : []
+          setCourseSubjects(subjects)
+        }
+      } catch {
+        // ignore: keep previous subjects
+      }
+    })()
+  }, [student.courseId, student.id, student.courseSubjects])
 
   useEffect(() => {
     if (!canManageTutors) return
@@ -97,20 +150,92 @@ export function StudentProfile({ student, userRole, userDbRole }: StudentProfile
     }
   }
 
-  const mockSubjects = [
-    { name: "Matemática", grade: 8.5, attendance: 95 },
-    { name: "Lengua", grade: 9.0, attendance: 98 },
-    { name: "Historia", grade: 7.8, attendance: 92 },
-    { name: "Ciencias Naturales", grade: 8.2, attendance: 96 },
-    { name: "Inglés", grade: 8.8, attendance: 94 },
-    { name: "Informática", grade: 9.2, attendance: 100 },
-  ]
+  const computeAverage = (grades: GradeRecord[]) => {
+    if (!Array.isArray(grades) || grades.length === 0) return null
+    let weightedSum = 0
+    let totalWeight = 0
+    let sum = 0
 
-  const mockRecentActivity = [
-    { date: "2025-01-15", activity: "Examen de Matemática", result: "8.5" },
-    { date: "2025-01-12", activity: "Entrega de proyecto", result: "Aprobado" },
-    { date: "2025-01-10", activity: "Participación en clase", result: "Excelente" },
-  ]
+    grades.forEach((grade) => {
+      const value = Number(grade?.calificacion)
+      if (Number.isNaN(value)) return
+      sum += value
+      const weight = grade?.peso == null ? 0 : Number(grade.peso)
+      if (!Number.isNaN(weight) && weight > 0) {
+        weightedSum += value * weight
+        totalWeight += weight
+      }
+    })
+
+    if (totalWeight > 0) return weightedSum / totalWeight
+    return sum / grades.length
+  }
+
+  const grades = Array.isArray(student.grades) ? student.grades : []
+  const assignedSubjects = courseSubjects
+
+  type SubjectSummary = {
+    subjectKey: string
+    subjectName: string
+    grades: GradeRecord[]
+    average: number | null
+    assignedOnly: boolean
+  }
+
+  const subjectsMap = new Map<string, SubjectSummary>()
+
+  assignedSubjects.forEach((subject) => {
+    const key = subject?.nombre || subject?.id || 'Sin materia'
+    if (!subjectsMap.has(key)) {
+      subjectsMap.set(key, {
+        subjectKey: key,
+        subjectName: subject?.nombre || 'Sin materia',
+        grades: [],
+        average: null,
+        assignedOnly: true,
+      })
+    }
+  })
+
+  grades.forEach((grade) => {
+    const subjectName = grade.materia_nombre || 'Sin materia'
+    const key = subjectName
+    if (!subjectsMap.has(key)) {
+      subjectsMap.set(key, {
+        subjectKey: key,
+        subjectName,
+        grades: [],
+        average: null,
+        assignedOnly: false,
+      })
+    }
+    const summary = subjectsMap.get(key)!
+    summary.grades.push(grade)
+    summary.average = computeAverage(summary.grades)
+    summary.assignedOnly = false
+  })
+
+  const subjectSummaries: SubjectSummary[] = Array.from(subjectsMap.values())
+    .map((summary) => ({
+      ...summary,
+      average: summary.average != null ? summary.average : computeAverage(summary.grades),
+    }))
+    .sort((a, b) => a.subjectName.localeCompare(b.subjectName))
+
+  const recentGrades = [...grades]
+    .filter((grade): grade is GradeRecord & { fecha: string } => typeof grade.fecha === 'string')
+    .sort((a, b) => (b.fecha ?? '').localeCompare(a.fecha ?? ''))
+    .slice(0, 5)
+
+  const formatAverage = (value: number | null | undefined) => {
+    if (value == null || Number.isNaN(value)) return '—'
+    return value.toFixed(2)
+  }
+
+  const formatGradeValue = (value: number | null | undefined) => {
+    if (value == null || Number.isNaN(value)) return '—'
+    return Number(value).toFixed(1)
+  }
 
   return (
     <Card>
@@ -171,12 +296,12 @@ export function StudentProfile({ student, userRole, userDbRole }: StudentProfile
             <div className="text-center p-3 bg-accent/50 rounded-lg">
               <TrendingUp className="w-5 h-5 text-primary mx-auto mb-1" />
               <p className="text-sm text-muted-foreground">Promedio</p>
-              <p className="text-lg font-semibold text-foreground">{student.average}</p>
+              <p className="text-lg font-semibold text-foreground">{formatAverage(student.average)}</p>
             </div>
             <div className="text-center p-3 bg-accent/50 rounded-lg">
               <Clock className="w-5 h-5 text-primary mx-auto mb-1" />
               <p className="text-sm text-muted-foreground">Asistencia</p>
-              <p className="text-lg font-semibold text-foreground">{student.attendance}%</p>
+              <p className="text-lg font-semibold text-foreground">{student.attendance != null ? `${student.attendance}%` : '—'}</p>
             </div>
           </div>
         </div>
@@ -187,22 +312,95 @@ export function StudentProfile({ student, userRole, userDbRole }: StudentProfile
         <div className="space-y-3">
           <h4 className="font-semibold text-foreground">Materias</h4>
           <div className="space-y-2">
-            {mockSubjects.map((subject, index) => (
-              <div key={index} className="flex items-center justify-between p-2 bg-accent/30 rounded">
-                <div className="flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-medium">{subject.name}</span>
-                </div>
-                <div className="text-right text-xs">
-                  <div
-                    className={`font-semibold ${subject.grade >= 8 ? "text-green-600" : subject.grade >= 6 ? "text-yellow-600" : "text-red-600"}`}
-                  >
-                    {subject.grade}
-                  </div>
-                  <div className="text-muted-foreground">{subject.attendance}%</div>
-                </div>
-              </div>
-            ))}
+            {subjectSummaries.length === 0 && (
+              <div className="text-sm text-muted-foreground">Aún no hay materias asignadas.</div>
+            )}
+
+            {subjectSummaries.length > 0 && (
+              <Accordion type="multiple" className="space-y-2">
+                {subjectSummaries.map((subject) => {
+                  const average = subject.average
+                  const gradeCount = subject.grades.length
+                  return (
+                    <AccordionItem
+                      key={subject.subjectKey}
+                      value={subject.subjectKey}
+                      className="border border-border rounded-lg bg-accent/10"
+                    >
+                      <AccordionTrigger className="px-3">
+                        <div className="flex flex-1 items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <BookOpen className="w-4 h-4 text-primary" />
+                            <span className="text-sm font-medium text-foreground">{subject.subjectName}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs md:text-sm">
+                            <span className="text-muted-foreground">{gradeCount} nota{gradeCount === 1 ? '' : 's'}</span>
+                            <span
+                              className={`font-semibold ${
+                                average != null && average >= 8
+                                  ? 'text-green-600'
+                                  : average != null && average >= 6
+                                  ? 'text-yellow-600'
+                                  : average != null
+                                  ? 'text-red-600'
+                                  : 'text-muted-foreground'
+                              }`}
+                            >
+                              Promedio: {formatAverage(average)}
+                            </span>
+                          </div>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="px-3">
+                        {subject.grades.length === 0 && (
+                          <div className="text-sm text-muted-foreground">Sin calificaciones registradas.</div>
+                        )}
+
+                        {subject.grades
+                          .slice()
+                          .sort((a, b) => (b.fecha ?? '').localeCompare(a.fecha ?? ''))
+                          .map((grade) => (
+                            <div
+                              key={grade.id}
+                              className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs md:text-sm p-3 bg-background rounded border border-border/50"
+                            >
+                              <div>
+                                <p className="font-medium text-foreground">{grade.tipo_evaluacion || 'Evaluación'}</p>
+                                <p className="text-muted-foreground">{grade.fecha || 'Sin fecha'}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Peso</p>
+                                <p className="font-medium">{grade.peso != null ? `${grade.peso}%` : '—'}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Calificación</p>
+                                <p
+                                  className={`font-semibold ${
+                                    grade.calificacion != null && grade.calificacion >= 8
+                                      ? 'text-green-600'
+                                      : grade.calificacion != null && grade.calificacion >= 6
+                                      ? 'text-yellow-600'
+                                      : grade.calificacion != null
+                                      ? 'text-red-600'
+                                      : 'text-muted-foreground'
+                                  }`}
+                                >
+                                  {formatGradeValue(grade.calificacion)}
+                                </p>
+                              </div>
+                              {grade.observaciones && (
+                                <div className="md:col-span-4 text-muted-foreground bg-muted/40 rounded p-2">
+                                  {grade.observaciones}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                      </AccordionContent>
+                    </AccordionItem>
+                  )
+                })}
+              </Accordion>
+            )}
           </div>
         </div>
 
@@ -212,14 +410,20 @@ export function StudentProfile({ student, userRole, userDbRole }: StudentProfile
         <div className="space-y-3">
           <h4 className="font-semibold text-foreground">Actividad Reciente</h4>
           <div className="space-y-2">
-            {mockRecentActivity.map((activity, index) => (
-              <div key={index} className="flex items-center justify-between p-2 border border-border rounded">
+            {recentGrades.length === 0 && (
+              <div className="text-sm text-muted-foreground">Sin actividad reciente.</div>
+            )}
+
+            {recentGrades.map((grade) => (
+              <div key={grade.id} className="flex items-center justify-between p-2 border border-border rounded bg-background/60">
                 <div>
-                  <p className="text-sm font-medium">{activity.activity}</p>
-                  <p className="text-xs text-muted-foreground">{activity.date}</p>
+                  <p className="text-sm font-medium">
+                    {grade.tipo_evaluacion || 'Evaluación'} · {grade.materia_nombre || 'Sin materia'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{grade.fecha || 'Sin fecha'}</p>
                 </div>
                 <Badge variant="secondary" className="text-xs">
-                  {activity.result}
+                  {formatGradeValue(grade.calificacion)}
                 </Badge>
               </div>
             ))}
