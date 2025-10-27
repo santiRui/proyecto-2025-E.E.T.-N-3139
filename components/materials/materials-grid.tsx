@@ -245,10 +245,26 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
   }
 
   const handleOpenLink = (material: any) => {
-    toast({
-      title: "Abriendo enlace",
-      description: material.title,
-    })
+    const url = material?.file_url || material?.fileUrl
+    if (!url) {
+      toast({ title: 'Enlace no disponible', description: 'Este material no tiene una URL asociada', variant: 'destructive' as any })
+      return
+    }
+    try {
+      const win = window.open(url, '_blank', 'noopener,noreferrer')
+      if (!win) {
+        // fallback por si el bloqueador impide window.open
+        const a = document.createElement('a')
+        a.href = url
+        a.target = '_blank'
+        a.rel = 'noopener noreferrer'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      }
+    } catch (e: any) {
+      toast({ title: 'No se pudo abrir el enlace', description: e?.message || 'Intenta nuevamente', variant: 'destructive' as any })
+    }
   }
 
   const canManageMaterial = (material: any) => {
@@ -423,7 +439,7 @@ export function MaterialsGrid({ userRole }: MaterialsGridProps) {
               </div>
 
               <div className="flex gap-2 pt-2">
-                {material.type === "link" && material.file_url ? (
+                {material.type === "link" && (material.file_url || material.fileUrl) ? (
                   <Button size="sm" className="flex-1" onClick={() => handleOpenLink(material)}>
                     <ExternalLink className="w-4 h-4 mr-2" />
                     Abrir
