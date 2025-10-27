@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation"
 export default function NewsPage() {
   const [user, setUser] = useState<any>(null)
   const router = useRouter()
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     const userData = localStorage.getItem("user")
@@ -30,8 +31,14 @@ export default function NewsPage() {
     )
   }
 
-  const canCreateNews = user.role === "teacher" || user.role === "preceptor"
-
+  const normalize = (val: any) => String(val || "").toLowerCase()
+  const splitTokens = (s: string) => s.split(/[\s,/|]+/).filter(Boolean)
+  const roleTokens = new Set([...splitTokens(normalize(user.role)), ...splitTokens(normalize(user.dbRole))])
+  const canCreateNews =
+    roleTokens.has("preceptor") ||
+    roleTokens.has("admin") ||
+    roleTokens.has("directivo") ||
+    roleTokens.has("administrador")
   return (
     <MainLayout>
       <div className="p-4 md:p-6">
@@ -44,10 +51,15 @@ export default function NewsPage() {
               </p>
             </div>
 
-            {canCreateNews && <NewsCreate userRole={user.role} />}
+            {canCreateNews && (
+              <NewsCreate
+                userRole={normalize(user.dbRole) || normalize(user.role)}
+                onNewsCreated={() => setRefreshKey((k) => k + 1)}
+              />
+            )}
           </div>
 
-          <NewsList />
+          <NewsList refreshKey={refreshKey} />
         </div>
       </div>
     </MainLayout>

@@ -15,75 +15,91 @@ interface QuickActionsProps {
 
 export function QuickActions({ userRole, tutorSummary, selectedStudentId }: QuickActionsProps) {
   const getActionsForRole = () => {
-    switch (userRole) {
-      case "teacher":
-      case "preceptor":
-        return [
-          {
-            title: "Crear Noticia",
-            description: "Publicar comunicado institucional",
-            icon: Newspaper,
-            href: "/news",
-            color: "bg-green-100 text-green-700 hover:bg-green-200",
-          },
-          {
-            title: "Subir Material",
-            description: "Agregar recurso educativo",
-            icon: Upload,
-            href: "/materials",
-            color: "bg-blue-100 text-blue-700 hover:bg-blue-200",
-          },
-          {
-            title: "Cargar Notas",
-            description: "Actualizar calificaciones",
-            icon: ClipboardList,
-            href: "/grades",
-            color: "bg-orange-100 text-orange-700 hover:bg-orange-200",
-          },
-        ]
+    const role = String(userRole || '').toLowerCase()
+    const isPreceptor = role.includes('preceptor')
+    const isAdminLike = role.includes('admin') || role.includes('administrador') || role.includes('directivo')
+    const isStudent = role.includes('student')
+    const isParentLike = role.includes('parent') || role.includes('padre') || role.includes('tutor')
 
-      case "student":
-        return [
-          {
-            title: "Ver Materiales",
-            description: "Acceder a recursos de estudio",
-            icon: Upload,
-            href: "/materials",
-            color: "bg-blue-100 text-blue-700 hover:bg-blue-200",
-          },
-          {
-            title: "Mis Notas",
-            description: "Consultar calificaciones",
-            icon: ClipboardList,
-            href: "/grades",
-            color: "bg-green-100 text-green-700 hover:bg-green-200",
-          },
-        ]
-
-      case "parent": {
-        const students = tutorSummary?.students || []
-        const studentId = selectedStudentId || students[0]?.student.id
-        return [
-          {
-            title: "Ver Notas",
-            description: "Resumen académico del estudiante",
-            icon: ClipboardList,
-            href: studentId ? `/dashboard#estudiante-${studentId}` : "#",
-            color: "bg-green-100 text-green-700 hover:bg-green-200",
-          },
-          {
-            title: "Materiales de Estudio",
-            description: "Recursos educativos",
-            icon: Upload,
-            href: "/materials",
-            color: "bg-blue-100 text-blue-700 hover:bg-blue-200",
-          },
-        ]
-      }
-
-      default:
-        return []
+    if (isPreceptor) {
+      return [
+        {
+          title: "Crear Noticia",
+          description: "Publicar comunicado institucional",
+          icon: Newspaper,
+          href: "/news",
+          color: "bg-green-100 text-green-700 hover:bg-green-200",
+        },
+        {
+          title: "Subir Material",
+          description: "Agregar recurso educativo",
+          icon: Upload,
+          href: "/materials",
+          color: "bg-blue-100 text-blue-700 hover:bg-blue-200",
+        },
+        {
+          title: "Cargar Notas",
+          description: "Actualizar calificaciones",
+          icon: ClipboardList,
+          href: "/grades",
+          color: "bg-orange-100 text-orange-700 hover:bg-orange-200",
+        },
+      ]
     }
+
+    if (isAdminLike) {
+      return [
+        {
+          title: "Crear Noticia",
+          description: "Publicar comunicado institucional",
+          icon: Newspaper,
+          href: "/news",
+          color: "bg-green-100 text-green-700 hover:bg-green-200",
+        },
+      ]
+    }
+
+    if (isStudent) {
+      return [
+        {
+          title: "Ver Materiales",
+          description: "Acceder a recursos de estudio",
+          icon: Upload,
+          href: "/materials",
+          color: "bg-blue-100 text-blue-700 hover:bg-blue-200",
+        },
+        {
+          title: "Mis Notas",
+          description: "Consultar calificaciones",
+          icon: ClipboardList,
+          href: "/grades",
+          color: "bg-green-100 text-green-700 hover:bg-green-200",
+        },
+      ]
+    }
+
+    if (isParentLike) {
+      const students = tutorSummary?.students || []
+      const studentId = selectedStudentId || students[0]?.student.id
+      return [
+        {
+          title: "Ver Notas",
+          description: "Resumen académico del estudiante",
+          icon: ClipboardList,
+          href: studentId ? `/dashboard#estudiante-${studentId}` : "#",
+          color: "bg-green-100 text-green-700 hover:bg-green-200",
+        },
+        {
+          title: "Materiales de Estudio",
+          description: "Recursos educativos",
+          icon: Upload,
+          href: "/materials",
+          color: "bg-blue-100 text-blue-700 hover:bg-blue-200",
+        },
+      ]
+    }
+
+    return []
   }
 
   const actions = getActionsForRole()

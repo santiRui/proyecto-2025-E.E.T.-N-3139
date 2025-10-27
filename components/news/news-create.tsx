@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { PlusCircle, X, Send } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 
 const categories = [
   "Institucional",
@@ -43,6 +44,27 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
   const [tags, setTags] = useState<string[]>([])
   const [newTag, setNewTag] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [imageUrl, setImageUrl] = useState("")
+  const [courses, setCourses] = useState<Array<{ id: string; nombre: string }>>([])
+  const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([])
+  const [allCourses, setAllCourses] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) return
+    let mounted = true
+    ;(async () => {
+      try {
+        const res = await fetch("/api/courses", { cache: "no-store" })
+        if (!res.ok) return
+        const data = await res.json().catch(() => ({}))
+        const list = Array.isArray(data?.courses) ? data.courses : []
+        if (mounted) setCourses(list.map((c: any) => ({ id: String(c.id), nombre: String(c.nombre || c.id) })))
+      } catch {}
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [isOpen])
 
   const handleAddTag = () => {
     if (newTag.trim() && !tags.includes(newTag.trim())) {
@@ -59,17 +81,25 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
     e.preventDefault()
     setIsSubmitting(true)
 
-    // Simulate API call
-    setTimeout(() => {
-      console.log("Creating news:", {
-        title,
-        content,
-        category,
-        priority,
-        tags,
-        author: userRole === "teacher" ? "Profesor" : "Preceptor",
-        date: new Date().toISOString(),
+    try {
+      const res = await fetch('/api/news', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          content,
+          category,
+          priority,
+          tags,
+          imageUrl: imageUrl || null,
+          targetAllCourses: allCourses,
+          targetCourseIds: selectedCourseIds,
+        }),
       })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'No se pudo crear la noticia')
+      }
 
       // Reset form
       setTitle("")
@@ -77,16 +107,20 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
       setCategory("")
       setPriority("")
       setTags([])
-      setIsSubmitting(false)
+      setImageUrl("")
+      setSelectedCourseIds([])
+      setAllCourses(false)
       setIsOpen(false)
-
-      alert("Noticia creada exitosamente")
       onNewsCreated?.()
-    }, 1500)
+    } catch (error: any) {
+      alert(error?.message || 'Error al crear la noticia')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const isFormValid = () => {
-    return title.trim() && content.trim() && category && priority
+    return title.trim() && content.trim() && category && priority && (allCourses || selectedCourseIds.length > 0)
   }
 
   const getPriorityColor = (priorityValue: string) => {
@@ -142,6 +176,22 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="imageUrl">Imagen (URL)</Label>
+              <Input
+                id="imageUrl"
+                placeholder="https://..."
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+              />
+              {imageUrl && (
+                <div className="mt-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imageUrl} alt="Vista previa" className="max-h-40 rounded-md border" />
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="category">Categoría *</Label>
@@ -178,6 +228,38 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
                 </Select>
               </div>
             </div>
+
+            <div className="space-y-2">
+              <Label>Cursos destinatarios *</Label>
+              <div className="flex items-center gap-2">
+                <Checkbox id="all-courses" checked={allCourses} onCheckedChange={(v) => setAllCourses(Boolean(v))} />
+                <Label htmlFor="all-courses" className="cursor-pointer">Todos los cursos</Label>
+              </div>
+              {!allCourses && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
+                  {courses.map((c) => {
+                    const checked = selectedCourseIds.includes(c.id)
+                    return (
+                      <label key={c.id} className="flex items-center gap-2 cursor-pointer border rounded-md p-2">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) => {
+                            const isChecked = Boolean(v)
+                            setSelectedCourseIds((prev) =>
+                              isChecked ? [...prev, c.id] : prev.filter((id) => id !== c.id),
+                            )
+                          }}
+                        />
+                        <span className="text-sm">{c.nombre}</span>
+                      </label>
+                    )
+                  })}
+                  {courses.length === 0 && (
+                    <div className="text-sm text-muted-foreground col-span-full">No hay cursos disponibles</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Tags */}
@@ -213,7 +295,7 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
           </div>
 
           {/* Preview */}
-          {(title || content || category || priority) && (
+          {(title || content || category || priority || imageUrl || (allCourses || selectedCourseIds.length > 0)) && (
             <div className="space-y-2">
               <Label>Vista Previa</Label>
               <Card className="border-dashed">
@@ -229,12 +311,32 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
                         {category && <Badge variant="outline">{category}</Badge>}
                       </div>
                     )}
+                    {(allCourses || selectedCourseIds.length > 0) && (
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">
+                          {allCourses ? "Todos los cursos" : "Cursos seleccionados"}
+                        </Badge>
+                        {!allCourses &&
+                          selectedCourseIds
+                            .map((id) => courses.find((c) => c.id === id)?.nombre)
+                            .filter(Boolean)
+                            .map((name, idx) => (
+                              <Badge key={idx} variant="outline">{name as string}</Badge>
+                            ))}
+                      </div>
+                    )}
                     {title && <h3 className="font-semibold text-balance">{title}</h3>}
                     {content && (
                       <p className="text-sm text-muted-foreground text-pretty">
                         {content.substring(0, 150)}
                         {content.length > 150 ? "..." : ""}
                       </p>
+                    )}
+                    {imageUrl && (
+                      <div className="pt-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={imageUrl} alt="Vista previa" className="max-h-48 rounded-md border" />
+                      </div>
                     )}
                   </div>
                 </CardContent>
