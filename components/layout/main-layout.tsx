@@ -7,6 +7,7 @@ import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
 import { Sidebar } from "@/components/layout/sidebar"
 import { useRouter } from "next/navigation"
+import { Toaster } from "@/components/ui/toaster"
 
 interface MainLayoutProps {
   children: React.ReactNode
@@ -57,6 +58,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </main>
       </div>
       <Footer />
+      <Toaster />
     </div>
   )
 }

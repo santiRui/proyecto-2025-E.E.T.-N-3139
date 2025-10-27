@@ -13,16 +13,35 @@ function keys() {
 export async function GET(req: NextRequest) {
   try {
     const courseId = req.nextUrl.searchParams.get('course_id')
+    const mode = req.nextUrl.searchParams.get('mode') // 'assigned' -> materias_docentes
     if (!courseId) return NextResponse.json({ error: 'Falta course_id' }, { status: 400 })
 
     const { url, anon } = keys()
     if (!url || !anon) return NextResponse.json({ error: 'Configuración de Supabase incompleta' }, { status: 500 })
 
-    const api = `${url}/rest/v1/materias_cursos?curso_id=eq.${courseId}&select=id,curso_id,materia_id,materias(id,nombre)`
-    const res = await fetch(api, { headers: { apikey: anon, Authorization: `Bearer ${anon}`, Accept: 'application/json' }, cache: 'no-store' })
-    if (!res.ok) return NextResponse.json({ error: 'No se pudieron obtener materias del curso' }, { status: 500 })
-    const rows = await res.json()
-    const subjects = rows.map((r: any) => ({ relation_id: r.id, id: r.materias?.id, nombre: r.materias?.nombre }))
+    let subjects: Array<{ id: string | null, nombre: string | null }> = []
+    if (mode === 'assigned') {
+      // subjects that have an assignment with a teacher for this course
+      const api = `${url}/rest/v1/materias_docentes?curso_id=eq.${courseId}&select=materias(id,nombre)`
+      const res = await fetch(api, { headers: { apikey: anon, Authorization: `Bearer ${anon}`, Accept: 'application/json' }, cache: 'no-store' })
+      if (!res.ok) return NextResponse.json({ error: 'No se pudieron obtener materias asignadas del curso' }, { status: 500 })
+      const rows = await res.json()
+      const list = rows.map((r: any) => ({ id: (r as any).materias?.id as string | null, nombre: (r as any).materias?.nombre as string | null }))
+      // dedupe by id
+      const seen = new Set<string>()
+      subjects = list.filter((s: { id: string | null, nombre: string | null }) => {
+        const id = s.id || ''
+        if (seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+    } else {
+      const api = `${url}/rest/v1/materias_cursos?curso_id=eq.${courseId}&select=id,curso_id,materia_id,materias(id,nombre)`
+      const res = await fetch(api, { headers: { apikey: anon, Authorization: `Bearer ${anon}`, Accept: 'application/json' }, cache: 'no-store' })
+      if (!res.ok) return NextResponse.json({ error: 'No se pudieron obtener materias del curso' }, { status: 500 })
+      const rows = await res.json()
+      subjects = rows.map((r: any) => ({ id: r.materias?.id, nombre: r.materias?.nombre }))
+    }
     return NextResponse.json({ ok: true, subjects })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Error interno' }, { status: 500 })

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,10 +10,11 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { useToast } from "@/components/ui/use-toast"
 import { Upload, X, FileText, Link, Video, FileSpreadsheet } from "lucide-react"
 
-const subjects = ["Matemática", "Lengua", "Historia", "Ciencias Naturales", "Informática", "Inglés"]
-const courses = ["3° Año C", "4° Año A", "4° Año B", "5° Año A", "5° Año B", "6° Año A"]
+const defaultSubjects = ["Matemática", "Lengua", "Historia", "Ciencias Naturales", "Informática", "Inglés"]
+const defaultCourses = ["3° Año C", "4° Año A", "4° Año B", "5° Año A", "5° Año B", "6° Año A"]
 const materialTypes = [
   { value: "document", label: "Documento", icon: FileText },
   { value: "video", label: "Video", icon: Video },
@@ -36,6 +37,38 @@ export function MaterialUpload({ userRole }: MaterialUploadProps) {
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState("")
   const [isUploading, setIsUploading] = useState(false)
+  const { toast } = useToast()
+
+  const isTeacher = userRole === "teacher"
+  const [assignedSubjects, setAssignedSubjects] = useState<string[]>([])
+  const [assignedCourses, setAssignedCourses] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!isTeacher) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [subRes, crsRes] = await Promise.all([
+          fetch('/api/subject-teachers?teacher=me', { credentials: 'include' }),
+          fetch('/api/teacher-courses?teacher=me', { credentials: 'include' })
+        ])
+        const subData = await subRes.json().catch(() => ({}))
+        const crsData = await crsRes.json().catch(() => ({}))
+        if (!cancelled) {
+          const subs = Array.isArray(subData?.subjects) ? subData.subjects.map((s: any) => s?.nombre).filter(Boolean) : []
+          const crss = Array.isArray(crsData?.courses) ? crsData.courses.map((c: any) => c?.nombre).filter(Boolean) : []
+          setAssignedSubjects(subs)
+          setAssignedCourses(crss)
+          // reset selections if not included
+          setSubject((prev) => (prev && subs.includes(prev) ? prev : ""))
+          setCourse((prev) => (prev && crss.includes(prev) ? prev : ""))
+        }
+      } catch {
+        if (!cancelled) { setAssignedSubjects([]); setAssignedCourses([]) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isTeacher])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -58,19 +91,51 @@ export function MaterialUpload({ userRole }: MaterialUploadProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsUploading(true)
+    try {
+      // If it's a file (not a link), upload to storage first
+      let uploadedUrl: string | null = null
+      let uploadedType: string | undefined
+      let uploadedSize: number | undefined
+      if (materialType !== "link" && file) {
+        const form = new FormData()
+        form.append('file', file)
+        const up = await fetch('/api/upload-material?folder=educativos', { method: 'POST', body: form, credentials: 'include' })
+        const upData = await up.json().catch(() => ({}))
+        if (!up.ok) {
+          throw new Error(upData?.error || 'No se pudo subir el archivo')
+        }
+        uploadedUrl = upData?.url || null
+        uploadedType = upData?.type
+        uploadedSize = upData?.size
+      }
 
-    // Simulate upload process
-    setTimeout(() => {
-      console.log("Uploading material:", {
+      const payload: any = {
         title,
         description,
         subject,
         course,
         materialType,
         tags,
-        file: file?.name,
-        url,
+      }
+      if (materialType === "link") {
+        payload.fileUrl = url
+        payload.fileType = "url"
+      } else if (file) {
+        payload.fileUrl = uploadedUrl
+        payload.fileType = uploadedType || file.type || undefined
+        payload.sizeBytes = uploadedSize || file.size || undefined
+      }
+
+      const res = await fetch('/api/materials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
       })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data?.error || 'No se pudo guardar el material')
+      }
 
       // Reset form
       setTitle("")
@@ -81,14 +146,19 @@ export function MaterialUpload({ userRole }: MaterialUploadProps) {
       setTags([])
       setFile(null)
       setUrl("")
-      setIsUploading(false)
 
-      alert("Material subido exitosamente")
-    }, 2000)
+      toast({ title: "Material subido", description: "Tu material se cargó correctamente y ya está disponible." })
+    } catch (err: any) {
+      toast({ title: "Error al subir", description: err?.message || 'Intenta nuevamente', variant: "destructive" as any })
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   const isFormValid = () => {
-    const basicFields = title && description && subject && course && materialType
+    const subjectOk = isTeacher ? assignedSubjects.includes(subject) : Boolean(subject)
+    const courseOk = isTeacher ? assignedCourses.includes(course) : Boolean(course)
+    const basicFields = title && description && subjectOk && courseOk && materialType
     const hasFileOrUrl = materialType === "link" ? url : file
     return basicFields && hasFileOrUrl
   }
@@ -141,12 +211,12 @@ export function MaterialUpload({ userRole }: MaterialUploadProps) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="subject">Materia *</Label>
-                <Select value={subject} onValueChange={setSubject} required>
+                <Select value={subject} onValueChange={setSubject} required disabled={isTeacher && assignedSubjects.length === 0}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar materia" />
+                    <SelectValue placeholder={isTeacher ? (assignedSubjects.length === 0 ? "No tienes materias asignadas" : "Seleccionar materia") : "Seleccionar materia"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {subjects.map((subj) => (
+                    {(isTeacher ? assignedSubjects : defaultSubjects).map((subj) => (
                       <SelectItem key={subj} value={subj}>
                         {subj}
                       </SelectItem>
@@ -157,12 +227,12 @@ export function MaterialUpload({ userRole }: MaterialUploadProps) {
 
               <div className="space-y-2">
                 <Label htmlFor="course">Curso *</Label>
-                <Select value={course} onValueChange={setCourse} required>
+                <Select value={course} onValueChange={setCourse} required disabled={isTeacher && assignedCourses.length === 0}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar curso" />
+                    <SelectValue placeholder={isTeacher ? (assignedCourses.length === 0 ? "No tienes cursos asignados" : "Seleccionar curso") : "Seleccionar curso"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {courses.map((c) => (
+                    {(isTeacher ? assignedCourses : defaultCourses).map((c) => (
                       <SelectItem key={c} value={c}>
                         {c}
                       </SelectItem>
@@ -218,14 +288,14 @@ export function MaterialUpload({ userRole }: MaterialUploadProps) {
                     type="file"
                     onChange={handleFileChange}
                     className="hidden"
-                    accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,.jpg,.png,.mp4,.avi"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.jpg,.png,.mp4,.avi"
                   />
                   <label htmlFor="file" className="cursor-pointer">
                     <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                     <p className="text-sm text-muted-foreground">
                       {file ? file.name : "Haz clic para seleccionar un archivo"}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">PDF, DOC, PPT, ZIP, JPG, PNG, MP4 (máx. 50MB)</p>
+                    <p className="text-xs text-muted-foreground mt-1">PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, ZIP, JPG/PNG, MP4 (máx. 50MB)</p>
                   </label>
                 </div>
               </div>
