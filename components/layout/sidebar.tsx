@@ -67,7 +67,19 @@ const sidebarItems: SidebarItem[] = [
     title: "Inscripción Digital",
     href: "/enrollment",
     icon: UserPlus,
-    roles: ["preceptor"],
+    roles: ["preceptor", "parent", "padre", "tutor", "admin", "directivo"],
+  },
+  {
+    title: "Estado de Inscripción",
+    href: "/enrollment/status",
+    icon: ClipboardList,
+    roles: ["parent", "padre", "tutor"],
+  },
+  {
+    title: "Revisión de Inscripciones",
+    href: "/enrollment/review",
+    icon: ShieldCheck,
+    roles: ["preceptor", "admin", "directivo", "administrador"],
   },
   {
     title: "Reportes",
@@ -84,6 +96,7 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const [user, setUser] = useState<any>(null)
+  const [enrollmentOpen, setEnrollmentOpen] = useState<boolean>(false)
   const pathname = usePathname()
   const router = useRouter()
 
@@ -94,10 +107,41 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     }
   }, [])
 
+  // Cargar estado de inscripción para decidir visibilidad del ítem a padres/tutores
+  useEffect(() => {
+    let mounted = true
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/enrollment/status', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json().catch(() => ({}))
+        if (mounted) setEnrollmentOpen(Boolean(data?.open))
+      } catch {}
+    }
+    loadStatus()
+    return () => { mounted = false }
+  }, [])
+
   if (!user) return null
 
-  const isAdmin = user?.dbRole === 'administrador' || user?.dbRole === 'directivo'
-  const filteredItems = isAdmin ? sidebarItems : sidebarItems.filter((item) => item.roles.includes(user.role))
+  const isAdmin = user?.dbRole?.toLowerCase() === 'administrador' || user?.dbRole?.toLowerCase() === 'directivo'
+
+  // Normalizar roles del usuario: soportar valores combinados como "Padre/Tutor"
+  const roleRaw = String(user.role || '').toLowerCase()
+  const dbRoleRaw = String(user.dbRole || '').toLowerCase()
+  const splitTokens = (s: string) => s.split(/[\s,/|]+/).filter(Boolean)
+  const userRoles: string[] = Array.from(new Set([...splitTokens(roleRaw), ...splitTokens(dbRoleRaw)]))
+
+  const filteredItems = (isAdmin ? sidebarItems : sidebarItems.filter((item) => item.roles.some(r => userRoles.includes(r))))
+    .filter((item) => {
+      // Si es el módulo de inscripción y el usuario es padre/tutor, ocultar cuando esté cerrada
+      if (item.href === '/enrollment') {
+        const isParentLike = userRoles.includes('parent') || userRoles.includes('padre') || userRoles.includes('tutor')
+        if (isParentLike && !enrollmentOpen) return false
+      }
+      // El estado de inscripción sí queda visible para padres/tutores incluso si está cerrada
+      return true
+    })
 
   return (
     <>

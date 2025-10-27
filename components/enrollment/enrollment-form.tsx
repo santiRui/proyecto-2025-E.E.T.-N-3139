@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,8 +11,10 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { UserPlus, Upload, FileText, User, Users } from "lucide-react"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription } from "@/components/ui/alert-dialog"
 
 export function EnrollmentForm() {
+  const router = useRouter()
   const [studentData, setStudentData] = useState({
     firstName: "",
     lastName: "",
@@ -42,8 +45,15 @@ export function EnrollmentForm() {
     dniCopy: null as File | null,
   })
 
+  // clave para forzar remount de los inputs file y limpiar su UI
+  const [fileInputsKey, setFileInputsKey] = useState(0)
+
   const [observations, setObservations] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogTitle, setDialogTitle] = useState("")
+  const [dialogDesc, setDialogDesc] = useState("")
+  const [dialogMode, setDialogMode] = useState<"success" | "error">("success")
 
   const handleStudentChange = (field: string, value: string) => {
     setStudentData((prev) => ({ ...prev, [field]: value }))
@@ -60,11 +70,64 @@ export function EnrollmentForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
+    try {
+      const formData = new FormData()
+      // Campos del estudiante
+      formData.append("firstName", studentData.firstName)
+      formData.append("lastName", studentData.lastName)
+      formData.append("dni", studentData.dni)
+      formData.append("birthDate", studentData.birthDate)
+      formData.append("average", studentData.average)
+      formData.append("address", studentData.address)
+      formData.append("email", studentData.email)
+      formData.append("phone", studentData.phone)
+      formData.append("course", studentData.course)
 
-    // Simulate form submission
-    setTimeout(() => {
-      console.log("Enrollment data:", { studentData, tutorData, files, observations })
-      alert("Inscripción enviada exitosamente. Se procesará en las próximas 48 horas.")
+      // Campos del tutor
+      formData.append("tutor_firstName", tutorData.firstName)
+      formData.append("tutor_lastName", tutorData.lastName)
+      formData.append("tutor_dni", tutorData.dni)
+      formData.append("tutor_relationship", tutorData.relationship)
+      formData.append("tutor_address", tutorData.address)
+      formData.append("tutor_email", tutorData.email)
+      formData.append("tutor_phone", tutorData.phone)
+      formData.append("tutor_occupation", tutorData.occupation)
+
+      // Observaciones
+      formData.append("observations", observations)
+
+      // Archivos
+      if (files.libreta) formData.append("libreta", files.libreta)
+      if (files.photo) formData.append("photo", files.photo)
+      if (files.birthCertificate) formData.append("birthCertificate", files.birthCertificate)
+      if (files.dniCopy) formData.append("dniCopy", files.dniCopy)
+
+      const res = await fetch("/api/enrollment", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        const message = data?.error || `Error al enviar la inscripción (${res.status})`
+        setDialogMode("error")
+        setDialogTitle("No se pudo enviar")
+        setDialogDesc(message)
+        setDialogOpen(true)
+        return
+      }
+
+      const data = await res.json()
+      console.log("Inscripción creada:", data)
+      setDialogMode("success")
+      setDialogTitle("Inscripción enviada")
+      setDialogDesc("Se procesará en las próximas 48 horas. Puedes consultar el estado cuando quieras.")
+      setDialogOpen(true)
+
+      try {
+        if (studentData.dni) localStorage.setItem('last_enrollment_student_dni', studentData.dni)
+        if (tutorData.email) localStorage.setItem('last_enrollment_tutor_email', tutorData.email)
+      } catch {}
 
       // Reset form
       setStudentData({
@@ -95,8 +158,16 @@ export function EnrollmentForm() {
         dniCopy: null,
       })
       setObservations("")
+      // Forzar limpieza visual de los <input type="file" />
+      setFileInputsKey((k) => k + 1)
+    } catch (e: any) {
+      setDialogMode("error")
+      setDialogTitle("Error")
+      setDialogDesc(e?.message || "Ocurrió un problema al enviar la inscripción")
+      setDialogOpen(true)
+    } finally {
       setIsSubmitting(false)
-    }, 2000)
+    }
   }
 
   const isFormValid = () => {
@@ -178,12 +249,12 @@ export function EnrollmentForm() {
                   <SelectValue placeholder="Seleccionar curso" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1° Año A">1° Año A</SelectItem>
-                  <SelectItem value="1° Año B">1° Año B</SelectItem>
-                  <SelectItem value="2° Año A">2° Año A</SelectItem>
-                  <SelectItem value="2° Año B">2° Año B</SelectItem>
-                  <SelectItem value="3° Año A">3° Año A</SelectItem>
-                  <SelectItem value="3° Año B">3° Año B</SelectItem>
+                  <SelectItem value="1° año ciclo basico">1° año ciclo basico</SelectItem>
+                  <SelectItem value="2° año ciclo basico">2° año ciclo basico</SelectItem>
+                  <SelectItem value="1° año ciclo superior">1° año ciclo superior</SelectItem>
+                  <SelectItem value="2° año ciclo superior">2° año ciclo superior</SelectItem>
+                  <SelectItem value="3° año ciclo superior">3° año ciclo superior</SelectItem>
+                  <SelectItem value="4° año ciclo superior">4° año ciclo superior</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -337,6 +408,7 @@ export function EnrollmentForm() {
                 id="libreta"
                 type="file"
                 accept=".pdf,.jpg,.png"
+                key={`libreta-${fileInputsKey}`}
                 onChange={(e) => handleFileChange("libreta", e.target.files?.[0] || null)}
               />
               {files.libreta && <p className="text-sm text-muted-foreground">Archivo: {files.libreta.name}</p>}
@@ -348,6 +420,7 @@ export function EnrollmentForm() {
                 id="photo"
                 type="file"
                 accept=".jpg,.png"
+                key={`photo-${fileInputsKey}`}
                 onChange={(e) => handleFileChange("photo", e.target.files?.[0] || null)}
               />
               {files.photo && <p className="text-sm text-muted-foreground">Archivo: {files.photo.name}</p>}
@@ -359,6 +432,7 @@ export function EnrollmentForm() {
                 id="birthCertificate"
                 type="file"
                 accept=".pdf,.jpg,.png"
+                key={`birthCertificate-${fileInputsKey}`}
                 onChange={(e) => handleFileChange("birthCertificate", e.target.files?.[0] || null)}
               />
               {files.birthCertificate && (
@@ -372,6 +446,7 @@ export function EnrollmentForm() {
                 id="dniCopy"
                 type="file"
                 accept=".pdf,.jpg,.png"
+                key={`dniCopy-${fileInputsKey}`}
                 onChange={(e) => handleFileChange("dniCopy", e.target.files?.[0] || null)}
               />
               {files.dniCopy && <p className="text-sm text-muted-foreground">Archivo: {files.dniCopy.name}</p>}
