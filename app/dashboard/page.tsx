@@ -11,6 +11,28 @@ import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import type { StudentOverviewStats } from "@/components/dashboard/quick-stats"
+
+type GradeRecord = {
+  id: string
+  materia_nombre: string | null
+  tipo_evaluacion: string | null
+  fecha: string | null
+  peso: number | null
+  calificacion: number | null
+  curso_nombre?: string | null
+}
+
+type AttendanceSummary = {
+  estudiante_id: string
+  curso_id: string | null
+  total_registros: number
+  presentes: number
+  llegadas_tarde: number
+  ausentes: number
+  faltas_justificadas: number
+  faltas_equivalentes: number
+}
 
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null)
@@ -18,6 +40,9 @@ export default function DashboardPage() {
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryError, setSummaryError] = useState("")
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+  const [studentOverview, setStudentOverview] = useState<StudentOverviewStats | null>(null)
+  const [studentOverviewLoading, setStudentOverviewLoading] = useState(false)
+  const [studentOverviewError, setStudentOverviewError] = useState("")
   const router = useRouter()
 
   useEffect(() => {
@@ -121,6 +146,164 @@ export default function DashboardPage() {
       return firstStudentId
     })
   }, [summary, user?.role])
+
+  useEffect(() => {
+    if (!user || user.role !== "student") {
+      setStudentOverview(null)
+      setStudentOverviewLoading(false)
+      setStudentOverviewError("")
+      return
+    }
+
+    let cancelled = false
+
+    const computeAverage = (grades: GradeRecord[]) => {
+      if (!grades.length) return null
+      let weightedSum = 0
+      let totalWeight = 0
+      let sum = 0
+
+      grades.forEach((grade) => {
+        const value = Number(grade?.calificacion)
+        if (Number.isNaN(value)) return
+        sum += value
+        const weight = grade?.peso == null ? 0 : Number(grade.peso)
+        if (!Number.isNaN(weight) && weight > 0) {
+          weightedSum += value * weight
+          totalWeight += weight
+        }
+      })
+
+      const baseAverage = totalWeight > 0 ? weightedSum / totalWeight : sum / grades.length
+      if (!Number.isFinite(baseAverage)) return null
+      return Math.round(baseAverage * 100) / 100
+    }
+
+    const loadStudentOverview = async () => {
+      setStudentOverviewLoading(true)
+      setStudentOverviewError("")
+      try {
+        // Obtener registros de los últimos 15 días para actividad reciente
+        const fifteenDaysAgo = new Date()
+        fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15)
+        const fromDate = fifteenDaysAgo.toISOString().slice(0, 10)
+
+        const [gradesRes, attendanceRes, recentAttendanceRes] = await Promise.all([
+          fetch(`/api/grades?student_id=${encodeURIComponent(user.id)}`, { credentials: "include" }),
+          fetch(`/api/attendance?summary=student&student_id=${encodeURIComponent(user.id)}`, {
+            credentials: "include",
+          }),
+          fetch(`/api/attendance?student_id=${encodeURIComponent(user.id)}&from=${fromDate}&limit=10`, {
+            credentials: "include",
+          }),
+        ])
+
+        const gradesJson = await gradesRes.json().catch(() => ({}))
+        const attendanceJson = await attendanceRes.json().catch(() => ({}))
+        const recentAttendanceJson = await recentAttendanceRes.json().catch(() => ({}))
+
+        if (!gradesRes.ok) {
+          throw new Error(gradesJson?.error || "No se pudieron obtener las calificaciones")
+        }
+
+        if (!attendanceRes.ok) {
+          throw new Error(attendanceJson?.error || "No se pudo obtener la asistencia")
+        }
+
+        const grades: GradeRecord[] = Array.isArray(gradesJson?.grades) ? gradesJson.grades : []
+        const attendanceSummary: AttendanceSummary | null = Array.isArray(attendanceJson?.summaries)
+          ? attendanceJson.summaries[0] || null
+          : null
+        const recentAttendanceRecords = Array.isArray(recentAttendanceJson?.records) ? recentAttendanceJson.records : []
+
+        const average = computeAverage(grades)
+        const attendancePercentage = attendanceSummary && attendanceSummary.total_registros > 0
+          ? (attendanceSummary.presentes / attendanceSummary.total_registros) * 100
+          : null
+
+        const subjectsMap = new Map<string, GradeRecord[]>()
+        grades.forEach((grade) => {
+          const subjectName = grade.materia_nombre || "Sin materia"
+          if (!subjectsMap.has(subjectName)) {
+            subjectsMap.set(subjectName, [])
+          }
+          subjectsMap.get(subjectName)!.push(grade)
+        })
+
+        const subjectsAtRisk = Array.from(subjectsMap.entries()).reduce((count, [, list]) => {
+          const subjectAverage = computeAverage(list)
+          return subjectAverage != null && subjectAverage < 6 ? count + 1 : count
+        }, 0)
+
+        if (!cancelled) {
+          const courseNameFromGrades = grades.find((grade) => grade?.curso_nombre)?.curso_nombre || null
+          setStudentOverview({
+            courseName: user?.curso_nombre || courseNameFromGrades || null,
+            subjectsCount: subjectsMap.size,
+            average,
+            attendancePercentage,
+            attendanceSummary: attendanceSummary
+              ? {
+                  totalRegistros: Number(attendanceSummary.total_registros ?? 0),
+                  presentes: Number(attendanceSummary.presentes ?? 0),
+                  llegadasTarde: Number(attendanceSummary.llegadas_tarde ?? 0),
+                  ausentes: Number(attendanceSummary.ausentes ?? 0),
+                  faltasJustificadas: Number(attendanceSummary.faltas_justificadas ?? 0),
+                  faltasEquivalentes: Number(attendanceSummary.faltas_equivalentes ?? 0),
+                }
+              : {
+                  totalRegistros: 0,
+                  presentes: 0,
+                  llegadasTarde: 0,
+                  ausentes: 0,
+                  faltasJustificadas: 0,
+                  faltasEquivalentes: 0,
+                },
+            subjectsAtRisk,
+            totalEvaluations: grades.length,
+            recentGrades: grades
+              .filter((grade) => typeof grade.fecha === "string")
+              .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""))
+              .slice(0, 5)
+              .map((grade) => ({
+                id: grade.id,
+                subject: grade.materia_nombre,
+                type: grade.tipo_evaluacion,
+                date: grade.fecha,
+                grade: grade.calificacion,
+                weight: grade.peso,
+              })),
+            recentAttendance: recentAttendanceRecords
+              .filter((record: any) => record?.fecha)
+              .sort((a: any, b: any) => (b.fecha || "").localeCompare(a.fecha || ""))
+              .slice(0, 5)
+              .map((record: any) => ({
+                id: record.id || `${record.estudiante_id}-${record.fecha}`,
+                subject: record.materia_nombre,
+                date: record.fecha,
+                status: record.estado,
+                observations: record.observaciones,
+              })),
+          })
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setStudentOverviewError(error?.message || "No se pudieron obtener los datos del estudiante")
+          setStudentOverview(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setStudentOverviewLoading(false)
+        }
+      }
+    }
+
+    loadStudentOverview()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   if (!user) {
     return (
@@ -244,6 +427,9 @@ export default function DashboardPage() {
             tutorSummaryLoading={summaryLoading}
             tutorSummaryError={summaryError}
             selectedStudentId={selectedStudentId}
+            studentOverview={studentOverview}
+            studentOverviewLoading={studentOverviewLoading}
+            studentOverviewError={studentOverviewError}
           />
         </div>
 
@@ -266,6 +452,9 @@ export default function DashboardPage() {
               tutorSummary={summary}
               tutorSummaryLoading={summaryLoading}
               tutorSummaryError={summaryError}
+              studentOverview={studentOverview}
+              studentOverviewLoading={studentOverviewLoading}
+              studentOverviewError={studentOverviewError}
             />
           </div>
         </div>
