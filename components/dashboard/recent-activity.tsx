@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Clock, FileText, Users, Calendar } from "lucide-react"
+import { Calendar, Clock, FileText, Users, CheckCircle, XCircle, AlertTriangle } from "lucide-react"
 import type { TutorSummaryResponse } from "@/lib/types/tutor-summary"
 import type { StudentOverviewStats } from "./quick-stats"
 
@@ -81,34 +81,63 @@ export function RecentActivity({
           ]
         }
 
-        const gradeActivities: Activity[] = studentOverview.recentGrades.map((grade, index) => ({
-          id: `${grade.id}-${index}`,
+        const gradeActivities: Activity[] = (studentOverview.recentGrades || []).map((grade, index) => ({
+          id: `grade-${grade.id}-${index}`,
           title: grade.subject ? `Calificación en ${grade.subject}` : "Calificación registrada",
           description: `${grade.type || "Evaluación"}: ${grade.grade ?? "—"}${
             grade.weight != null ? ` · Peso ${grade.weight}%` : ""
           }`,
           time: formatDate(grade.date),
+          rawDate: grade.date || "",
           type: "grade",
           icon: FileText,
         }))
 
-        const attendance = studentOverview.attendanceSummary
-        const attendancePercentage = studentOverview.attendancePercentage != null
-          ? `${Math.round(studentOverview.attendancePercentage)}%`
-          : "Sin datos"
+        const attendanceActivities: Activity[] = (studentOverview.recentAttendance || []).map((record, index) => {
+          const getStatusLabel = (status: string | null) => {
+            switch (status) {
+              case "presente":
+                return "Presente"
+              case "ausente":
+                return "Ausente"
+              case "llegada_tarde":
+                return "Llegada Tarde"
+              case "falta_justificada":
+                return "Falta Justificada"
+              default:
+                return status || "Sin estado"
+            }
+          }
 
-        const attendanceActivity: Activity = {
-          id: "attendance",
-          title: "Estado de asistencia",
-          description: `Presentes: ${attendance.presentes} · Ausentes: ${attendance.ausentes} · Llegadas tarde: ${attendance.llegadasTarde}`,
-          time: `Faltas equivalentes: ${attendance.faltasEquivalentes.toFixed(2)} · ${attendancePercentage}`,
-          type: "attendance",
-          icon: Calendar,
-        }
+          const getStatusIcon = (status: string | null) => {
+            switch (status) {
+              case "presente":
+                return CheckCircle
+              case "ausente":
+                return XCircle
+              case "llegada_tarde":
+                return Clock
+              case "falta_justificada":
+                return AlertTriangle
+              default:
+                return Calendar
+            }
+          }
 
-        const allActivities = [...gradeActivities, attendanceActivity]
-          .sort((a, b) => (b.time || "").localeCompare(a.time || ""))
-          .slice(0, 6)
+          return {
+            id: `attendance-${record.id}-${index}`,
+            title: record.subject ? `Asistencia en ${record.subject}` : "Registro de asistencia",
+            description: `${getStatusLabel(record.status)}${record.observations ? ` · ${record.observations}` : ""}`,
+            time: formatDate(record.date),
+            rawDate: record.date || "",
+            type: "attendance",
+            icon: getStatusIcon(record.status),
+          }
+        })
+
+        const allActivities = [...gradeActivities, ...attendanceActivities]
+          .sort((a: any, b: any) => (b.rawDate || "").localeCompare(a.rawDate || ""))
+          .slice(0, 8)
 
         return allActivities.length > 0
           ? allActivities

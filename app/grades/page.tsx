@@ -67,7 +67,7 @@ export default function GradesPage() {
             </TabsContent>
 
             <TabsContent value="attendance">
-              <AttendanceView userRole={user.role} />
+              <AttendanceView userRole={user.role} user={user} />
             </TabsContent>
 
             {canManageGrades && (

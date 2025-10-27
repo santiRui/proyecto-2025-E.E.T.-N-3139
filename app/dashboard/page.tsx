@@ -183,15 +183,24 @@ export default function DashboardPage() {
       setStudentOverviewLoading(true)
       setStudentOverviewError("")
       try {
-        const [gradesRes, attendanceRes] = await Promise.all([
+        // Obtener registros de los últimos 15 días para actividad reciente
+        const fifteenDaysAgo = new Date()
+        fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15)
+        const fromDate = fifteenDaysAgo.toISOString().slice(0, 10)
+
+        const [gradesRes, attendanceRes, recentAttendanceRes] = await Promise.all([
           fetch(`/api/grades?student_id=${encodeURIComponent(user.id)}`, { credentials: "include" }),
           fetch(`/api/attendance?summary=student&student_id=${encodeURIComponent(user.id)}`, {
+            credentials: "include",
+          }),
+          fetch(`/api/attendance?student_id=${encodeURIComponent(user.id)}&from=${fromDate}&limit=10`, {
             credentials: "include",
           }),
         ])
 
         const gradesJson = await gradesRes.json().catch(() => ({}))
         const attendanceJson = await attendanceRes.json().catch(() => ({}))
+        const recentAttendanceJson = await recentAttendanceRes.json().catch(() => ({}))
 
         if (!gradesRes.ok) {
           throw new Error(gradesJson?.error || "No se pudieron obtener las calificaciones")
@@ -205,6 +214,7 @@ export default function DashboardPage() {
         const attendanceSummary: AttendanceSummary | null = Array.isArray(attendanceJson?.summaries)
           ? attendanceJson.summaries[0] || null
           : null
+        const recentAttendanceRecords = Array.isArray(recentAttendanceJson?.records) ? recentAttendanceJson.records : []
 
         const average = computeAverage(grades)
         const attendancePercentage = attendanceSummary && attendanceSummary.total_registros > 0
@@ -262,6 +272,17 @@ export default function DashboardPage() {
                 date: grade.fecha,
                 grade: grade.calificacion,
                 weight: grade.peso,
+              })),
+            recentAttendance: recentAttendanceRecords
+              .filter((record: any) => record?.fecha)
+              .sort((a: any, b: any) => (b.fecha || "").localeCompare(a.fecha || ""))
+              .slice(0, 5)
+              .map((record: any) => ({
+                id: record.id || `${record.estudiante_id}-${record.fecha}`,
+                subject: record.materia_nombre,
+                date: record.fecha,
+                status: record.estado,
+                observations: record.observaciones,
               })),
           })
         }
@@ -431,6 +452,9 @@ export default function DashboardPage() {
               tutorSummary={summary}
               tutorSummaryLoading={summaryLoading}
               tutorSummaryError={summaryError}
+              studentOverview={studentOverview}
+              studentOverviewLoading={studentOverviewLoading}
+              studentOverviewError={studentOverviewError}
             />
           </div>
         </div>

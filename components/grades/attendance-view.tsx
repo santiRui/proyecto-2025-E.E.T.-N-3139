@@ -80,10 +80,16 @@ type Student = {
 
 interface AttendanceViewProps {
   userRole: string
+  user?: any
 }
 
-export function AttendanceView({ userRole }: AttendanceViewProps) {
+export function AttendanceView({ userRole, user }: AttendanceViewProps) {
   const [selectedPeriod, setSelectedPeriod] = useState("current")
+  
+  // Estados para datos de estudiante
+  const [studentAttendanceData, setStudentAttendanceData] = useState<any>(null)
+  const [studentAttendanceLoading, setStudentAttendanceLoading] = useState(false)
+  const [studentAttendanceError, setStudentAttendanceError] = useState("")
 
   const isStaffView = userRole === "teacher" || userRole === "preceptor"
 
@@ -267,6 +273,91 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
     }
   }, [isStaffView, selectedCourseId, selectedDate])
 
+  // Cargar datos de asistencia para estudiantes
+  useEffect(() => {
+    if (isStaffView || userRole !== "student" || !user?.id) return
+
+    let cancelled = false
+
+    async function loadStudentAttendance() {
+      setStudentAttendanceLoading(true)
+      setStudentAttendanceError("")
+      
+      try {
+        // Obtener resumen de asistencias
+        const summaryRes = await fetch(`/api/attendance?summary=student&student_id=${encodeURIComponent(user.id)}`, { credentials: 'include' })
+        const summaryData = await summaryRes.json().catch(() => ({}))
+        
+        console.log('[AttendanceView] Summary response:', { ok: summaryRes.ok, data: summaryData })
+        
+        if (!cancelled) {
+          if (!summaryRes.ok) {
+            console.error('[AttendanceView] Error en resumen:', summaryData)
+            setStudentAttendanceError(summaryData?.error || 'No se pudo obtener el resumen de asistencias')
+            return
+          }
+
+          const summary = Array.isArray(summaryData?.summaries) && summaryData.summaries.length > 0 
+            ? summaryData.summaries[0] 
+            : null
+
+          console.log('[AttendanceView] Summary procesado:', summary)
+
+          // Obtener registros detallados de los últimos 30 días
+          const thirtyDaysAgo = new Date()
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+          const fromDate = thirtyDaysAgo.toISOString().slice(0, 10)
+          
+          const recordsRes = await fetch(`/api/attendance?student_id=${encodeURIComponent(user.id)}&from=${fromDate}&limit=50`, { credentials: 'include' })
+          const recordsData = await recordsRes.json().catch(() => ({}))
+          
+          console.log('[AttendanceView] Records response:', { ok: recordsRes.ok, data: recordsData })
+          
+          if (!recordsRes.ok) {
+            console.error('[AttendanceView] Error en registros:', recordsData)
+            setStudentAttendanceError(recordsData?.error || 'No se pudieron obtener los registros de asistencia')
+            return
+          }
+
+          const records = Array.isArray(recordsData?.records) ? recordsData.records : []
+          
+          console.log('[AttendanceView] Datos finales:', { summary, recordsCount: records.length })
+          
+          setStudentAttendanceData({
+            summary,
+            records,
+            overall: summary ? {
+              present: Number(summary.presentes || 0),
+              absent: Number(summary.ausentes || 0),
+              late: Number(summary.llegadas_tarde || 0),
+              justified: Number(summary.faltas_justificadas || 0),
+              equivalent: Number(summary.faltas_equivalentes || 0),
+              total: Number(summary.total_registros || 0),
+              percentage: summary.total_registros > 0 
+                ? Math.round((Number(summary.presentes || 0) / Number(summary.total_registros || 1)) * 100)
+                : 0
+            } : null
+          })
+        }
+      } catch (error) {
+        console.error('[AttendanceView] Error catch:', error)
+        if (!cancelled) {
+          setStudentAttendanceError('Error al cargar datos de asistencia: ' + (error instanceof Error ? error.message : 'Error desconocido'))
+        }
+      } finally {
+        if (!cancelled) {
+          setStudentAttendanceLoading(false)
+        }
+      }
+    }
+
+    loadStudentAttendance()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isStaffView, userRole, user?.id])
+
   const handleStatusChange = (studentId: string, status: string) => {
     setAttendanceValues((prev) => ({
       ...prev,
@@ -409,7 +500,48 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
   }
 
   if (userRole === "student" || userRole === "parent") {
-    const data = mockAttendance.student
+    if (studentAttendanceLoading) {
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-center py-8">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-muted-foreground">Cargando datos de asistencia...</span>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (studentAttendanceError) {
+      return (
+        <div className="space-y-6">
+          <Card>
+            <CardContent className="py-8 text-center">
+              <div className="text-destructive mb-2">Error al cargar asistencias</div>
+              <p className="text-sm text-muted-foreground">{studentAttendanceError}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )
+    }
+
+    const data = studentAttendanceData?.overall
+    const records = studentAttendanceData?.records || []
+
+    // Si no hay datos en absoluto, mostrar mensaje vacío
+    if (!studentAttendanceData || !data) {
+      return (
+        <div className="space-y-6">
+          <Card>
+            <CardContent className="py-8 text-center">
+              <p className="text-muted-foreground">No hay registros de asistencia disponibles</p>
+              <p className="text-xs text-muted-foreground mt-2">Los registros aparecerán cuando se carguen asistencias</p>
+            </CardContent>
+          </Card>
+        </div>
+      )
+    }
 
     return (
       <div className="space-y-6">
@@ -428,17 +560,17 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
         </div>
 
         {/* Overall Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Asistencia General</CardTitle>
               <Calendar className="w-4 h-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${getAttendanceColor(data.overall.percentage)}`}>
-                {data.overall.percentage}%
+              <div className={`text-2xl font-bold ${getAttendanceColor(data.percentage)}`}>
+                {data.percentage}%
               </div>
-              <Progress value={data.overall.percentage} className="mt-2" />
+              <Progress value={data.percentage} className="mt-2" />
             </CardContent>
           </Card>
 
@@ -448,7 +580,7 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
               <CheckCircle className="w-4 h-4 text-green-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{data.overall.present}</div>
+              <div className="text-2xl font-bold text-green-600">{data.present}</div>
             </CardContent>
           </Card>
 
@@ -458,7 +590,7 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
               <XCircle className="w-4 h-4 text-red-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{data.overall.absent}</div>
+              <div className="text-2xl font-bold text-red-600">{data.absent}</div>
             </CardContent>
           </Card>
 
@@ -468,36 +600,64 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
               <Clock className="w-4 h-4 text-yellow-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{data.overall.late}</div>
+              <div className="text-2xl font-bold text-yellow-600">{data.late}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Faltas Justificadas</CardTitle>
+              <AlertTriangle className="w-4 h-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{data.justified}</div>
             </CardContent>
           </Card>
         </div>
 
-        {/* By Subject */}
+        {/* Detalle de Faltas */}
         <Card>
           <CardHeader>
-            <CardTitle>Asistencia por Materia</CardTitle>
+            <CardTitle>Detalle de Faltas</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {data.subjects.map((subject, index) => (
-                <div key={index} className="flex items-center justify-between p-4 bg-accent/30 rounded-lg">
-                  <div>
-                    <p className="font-medium">{subject.subject}</p>
-                    <Badge className={`${getStatusColor(subject.status)} text-xs mt-1`}>
-                      {getStatusLabel(subject.status)}
-                    </Badge>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-lg font-bold ${getAttendanceColor(subject.percentage)}`}>
-                      {subject.percentage}%
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {subject.present}P / {subject.absent}A / {subject.late}T
-                    </p>
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <XCircle className="w-4 h-4 text-red-600" />
+                  <span className="font-medium text-red-800">Faltas Injustificadas</span>
                 </div>
-              ))}
+                <div className="text-2xl font-bold text-red-600">{data.absent - data.justified}</div>
+                <p className="text-xs text-red-600">Equivalen a {((data.absent - data.justified) * 0.5).toFixed(1)} faltas</p>
+              </div>
+              
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium text-blue-800">Faltas Justificadas</span>
+                </div>
+                <div className="text-2xl font-bold text-blue-600">{data.justified}</div>
+                <p className="text-xs text-blue-600">Equivalen a {(data.justified * 0.5).toFixed(1)} faltas</p>
+              </div>
+              
+              <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="w-4 h-4 text-yellow-600" />
+                  <span className="font-medium text-yellow-800">Llegadas Tarde</span>
+                </div>
+                <div className="text-2xl font-bold text-yellow-600">{data.late}</div>
+                <p className="text-xs text-yellow-600">Equivalen a {(data.late * 0.25).toFixed(1)} faltas</p>
+              </div>
+            </div>
+            
+            <div className="p-4 bg-accent/30 rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Total Faltas Equivalentes:</span>
+                <span className="text-lg font-bold text-destructive">{data.equivalent.toFixed(2)}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Límite permitido: 25% del total de clases
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -505,23 +665,74 @@ export function AttendanceView({ userRole }: AttendanceViewProps) {
         {/* Recent Activity */}
         <Card>
           <CardHeader>
-            <CardTitle>Registro Reciente</CardTitle>
+            <CardTitle>Registro Reciente de Asistencias</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {data.recent.map((record, index) => (
-                <div key={index} className="flex items-center justify-between p-3 border border-border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    {getAttendanceIcon(record.status)}
-                    <div>
-                      <p className="font-medium">{record.subject}</p>
-                      <p className="text-sm text-muted-foreground">{record.date}</p>
+            {records.length === 0 ? (
+              <p className="text-center text-muted-foreground py-4">No hay registros recientes</p>
+            ) : (
+              <div className="space-y-3">
+                {records.slice(0, 10).map((record: any, index: number) => {
+                  const formatDate = (dateStr: string) => {
+                    try {
+                      return new Date(dateStr).toLocaleDateString('es-AR', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric'
+                      })
+                    } catch {
+                      return dateStr
+                    }
+                  }
+
+                  const getStatusIcon = (estado: string) => {
+                    switch (estado) {
+                      case "presente":
+                        return <CheckCircle className="w-4 h-4 text-green-600" />
+                      case "ausente":
+                        return <XCircle className="w-4 h-4 text-red-600" />
+                      case "llegada_tarde":
+                        return <Clock className="w-4 h-4 text-yellow-600" />
+                      case "falta_justificada":
+                        return <AlertTriangle className="w-4 h-4 text-blue-600" />
+                      default:
+                        return <AlertTriangle className="w-4 h-4" />
+                    }
+                  }
+
+                  const getStatusLabel = (estado: string) => {
+                    switch (estado) {
+                      case "presente":
+                        return "Presente"
+                      case "ausente":
+                        return "Ausente"
+                      case "llegada_tarde":
+                        return "Llegada Tarde"
+                      case "falta_justificada":
+                        return "Falta Justificada"
+                      default:
+                        return estado
+                    }
+                  }
+
+                  return (
+                    <div key={index} className="flex items-center justify-between p-3 border border-border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        {getStatusIcon(record.estado)}
+                        <div>
+                          <p className="font-medium">{record.materia_nombre || 'Materia no especificada'}</p>
+                          <p className="text-sm text-muted-foreground">{formatDate(record.fecha)}</p>
+                          {record.observaciones && (
+                            <p className="text-xs text-muted-foreground italic">{record.observaciones}</p>
+                          )}
+                        </div>
+                      </div>
+                      <Badge variant="secondary">{getStatusLabel(record.estado)}</Badge>
                     </div>
-                  </div>
-                  <Badge variant="secondary">{getAttendanceLabel(record.status)}</Badge>
-                </div>
-              ))}
-            </div>
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

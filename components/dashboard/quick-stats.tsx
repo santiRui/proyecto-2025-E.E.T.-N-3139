@@ -27,6 +27,13 @@ export type StudentOverviewStats = {
     grade: number | null
     weight: number | null
   }>
+  recentAttendance: Array<{
+    id: string
+    subject: string | null
+    date: string | null
+    status: string | null
+    observations: string | null
+  }>
 }
 
 interface QuickStatsProps {
