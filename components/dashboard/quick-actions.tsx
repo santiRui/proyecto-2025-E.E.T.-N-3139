@@ -5,11 +5,15 @@ import { Button } from "@/components/ui/button"
 import { PlusCircle, Upload, Newspaper, Users, ClipboardList } from "lucide-react"
 import Link from "next/link"
 
+import type { TutorSummaryResponse } from "@/lib/types/tutor-summary"
+
 interface QuickActionsProps {
   userRole: string
+  tutorSummary?: TutorSummaryResponse | null
+  selectedStudentId?: string | null
 }
 
-export function QuickActions({ userRole }: QuickActionsProps) {
+export function QuickActions({ userRole, tutorSummary, selectedStudentId }: QuickActionsProps) {
   const getActionsForRole = () => {
     switch (userRole) {
       case "teacher":
@@ -56,13 +60,15 @@ export function QuickActions({ userRole }: QuickActionsProps) {
           },
         ]
 
-      case "parent":
+      case "parent": {
+        const students = tutorSummary?.students || []
+        const studentId = selectedStudentId || students[0]?.student.id
         return [
           {
-            title: "Notas del Estudiante",
-            description: "Ver progreso académico",
+            title: "Ver Notas",
+            description: "Resumen académico del estudiante",
             icon: ClipboardList,
-            href: "/grades",
+            href: studentId ? `/dashboard#estudiante-${studentId}` : "#",
             color: "bg-green-100 text-green-700 hover:bg-green-200",
           },
           {
@@ -73,6 +79,7 @@ export function QuickActions({ userRole }: QuickActionsProps) {
             color: "bg-blue-100 text-blue-700 hover:bg-blue-200",
           },
         ]
+      }
 
       default:
         return []

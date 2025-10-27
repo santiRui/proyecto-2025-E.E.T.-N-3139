@@ -1,13 +1,18 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, BookOpen, Calendar, TrendingUp } from "lucide-react"
+import { Users, BookOpen, Calendar, TrendingUp, AlertTriangle } from "lucide-react"
+import type { TutorSummaryResponse } from "@/lib/types/tutor-summary"
 
 interface QuickStatsProps {
   userRole: string
+  tutorSummary?: TutorSummaryResponse | null
+  tutorSummaryLoading?: boolean
+  tutorSummaryError?: string
+  selectedStudentId?: string | null
 }
 
-export function QuickStats({ userRole }: QuickStatsProps) {
+export function QuickStats({ userRole, tutorSummary, tutorSummaryLoading, tutorSummaryError, selectedStudentId }: QuickStatsProps) {
   const getStatsForRole = (role: string) => {
     switch (role) {
       case "student":
@@ -103,37 +108,111 @@ export function QuickStats({ userRole }: QuickStatsProps) {
             gradient: "from-primary-light to-accent-green",
           },
         ]
-      case "parent":
+      case "parent": {
+        if (tutorSummaryLoading) {
+          return [
+            {
+              title: "Cargando información",
+              value: "…",
+              icon: Users,
+              color: "text-muted-foreground",
+              gradient: "from-muted to-muted",
+            },
+          ]
+        }
+
+        if (tutorSummaryError) {
+          return [
+            {
+              title: "Sin datos",
+              value: tutorSummaryError,
+              icon: AlertTriangle,
+              color: "text-destructive",
+              gradient: "from-destructive to-destructive/80",
+            },
+          ]
+        }
+
+        const students = tutorSummary?.students || []
+        if (students.length === 0) {
+          return [
+            {
+              title: "Sin estudiantes asignados",
+              value: "—",
+              icon: Users,
+              color: "text-muted-foreground",
+              gradient: "from-muted to-muted",
+            },
+          ]
+        }
+
+        const selected = selectedStudentId
+          ? students.find((student) => student.student.id === selectedStudentId)
+          : students[0]
+
+        if (!selected) {
+          return [
+            {
+              title: "Selecciona un estudiante",
+              value: "—",
+              icon: Users,
+              color: "text-muted-foreground",
+              gradient: "from-muted to-muted",
+            },
+          ]
+        }
+
+        const average = selected.grades.average
+        const attendancePercentage = selected.attendance.porcentaje_asistencia
+        const faltasEquivalentes = selected.attendance.faltas_equivalentes
+        const atRiskSubjects = selected.grades.subjects.filter((subject) => (subject.average ?? 0) < 6).length
+        const upcomingEvaluations = selected.grades.recent?.length || 0
+
         return [
           {
-            title: "Hijos Registrados",
-            value: "2",
+            title: selected.student.nombre,
+            value: selected.student.curso_nombre ? `${selected.student.curso_nombre}` : "Sin curso",
             icon: Users,
             color: "text-primary",
             gradient: "from-primary to-primary-light",
           },
           {
-            title: "Promedio Familiar",
-            value: "8.2",
+            title: "Promedio General",
+            value: average != null ? average.toFixed(2) : "—",
             icon: TrendingUp,
             color: "text-accent-green",
             gradient: "from-accent-green to-accent-green-light",
           },
           {
-            title: "Reuniones Pendientes",
-            value: "1",
+            title: "Asistencia",
+            value: attendancePercentage != null ? `${Math.round(attendancePercentage)}%` : "—",
             icon: Calendar,
             color: "text-primary-light",
             gradient: "from-primary-light to-accent-green",
           },
           {
-            title: "Comunicados Nuevos",
-            value: "4",
+            title: "Faltas equivalentes",
+            value: faltasEquivalentes.toFixed(2),
             icon: BookOpen,
+            color: "text-yellow-600",
+            gradient: "from-yellow-400 to-orange-400",
+          },
+          {
+            title: "Materias en riesgo",
+            value: String(atRiskSubjects),
+            icon: AlertTriangle,
+            color: "text-destructive",
+            gradient: "from-destructive to-destructive/80",
+          },
+          {
+            title: "Evaluaciones recientes",
+            value: String(upcomingEvaluations),
+            icon: TrendingUp,
             color: "text-primary-dark",
             gradient: "from-primary-dark to-primary",
           },
         ]
+      }
       default:
         return []
     }

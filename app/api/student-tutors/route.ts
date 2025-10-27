@@ -13,26 +13,46 @@ export async function GET(req: NextRequest) {
     const token = req.cookies.get(SESSION_COOKIE)?.value
     if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     const session = await verifySession(token)
-    if (!['preceptor', 'directivo'].includes(session.role)) {
+    if (!['preceptor', 'directivo', 'tutor'].includes(session.role)) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
     }
 
     const studentId = req.nextUrl.searchParams.get('student_id')
-    if (!studentId) return NextResponse.json({ error: 'Falta student_id' }, { status: 400 })
+    const tutorId = req.nextUrl.searchParams.get('tutor_id')
+
+    if (!studentId && session.role !== 'tutor') {
+      return NextResponse.json({ error: 'Falta student_id' }, { status: 400 })
+    }
+
+    if (session.role === 'tutor' && !studentId) {
+      const { SUPABASE_URL, KEY } = getKeys()
+      if (!SUPABASE_URL || !KEY) return NextResponse.json({ error: 'Faltan claves de Supabase' }, { status: 500 })
+
+      const relUrl = `${SUPABASE_URL}/rest/v1/tutores_estudiantes?select=estudiante_id&tutor_id=eq.${session.id}`
+      const relRes = await fetch(relUrl, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, Accept: 'application/json' }, cache: 'no-store' })
+      if (!relRes.ok) return NextResponse.json({ error: 'No se pudieron obtener relaciones' }, { status: 500 })
+      const relRows: Array<{ estudiante_id: string }> = await relRes.json()
+      const studentIds = relRows.map((r) => r.estudiante_id).filter(Boolean)
+      return NextResponse.json({ ok: true, students: studentIds })
+    }
 
     const { SUPABASE_URL, KEY } = getKeys()
     if (!SUPABASE_URL || !KEY) return NextResponse.json({ error: 'Faltan claves de Supabase' }, { status: 500 })
 
     // 1) Obtener relaciones
-    const relUrl = `${SUPABASE_URL}/rest/v1/tutores_estudiantes?select=tutor_id&estudiante_id=eq.${studentId}`
+    let relUrl = `${SUPABASE_URL}/rest/v1/tutores_estudiantes?select=tutor_id,estudiante_id`
+    const filters: string[] = []
+    if (studentId) filters.push(`estudiante_id=eq.${studentId}`)
+    if (tutorId) filters.push(`tutor_id=eq.${tutorId}`)
+    if (filters.length) relUrl += `&${filters.join('&')}`
     const relRes = await fetch(relUrl, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, Accept: 'application/json' }, cache: 'no-store' })
     if (!relRes.ok) return NextResponse.json({ error: 'No se pudieron obtener relaciones' }, { status: 500 })
     const relRows: Array<{ tutor_id: string }> = await relRes.json()
     const tutorIds = relRows.map(r => r.tutor_id).filter(Boolean)
     if (tutorIds.length === 0) return NextResponse.json({ ok: true, tutors: [] })
 
-    // 2) Traer perfiles de tutores
-    const inList = tutorIds.map(id => `"${id}"`).join(',')
+    // 2) Traer perfiles de tutores (sin comillas en los UUIDs)
+    const inList = tutorIds.join(',')
     const tutUrl = `${SUPABASE_URL}/rest/v1/perfiles?id=in.(${inList})&select=id,nombre_completo,correo,telefono`
     const tutRes = await fetch(tutUrl, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, Accept: 'application/json' }, cache: 'no-store' })
     if (!tutRes.ok) return NextResponse.json({ error: 'No se pudieron obtener tutores' }, { status: 500 })
