@@ -19,6 +19,14 @@ export type StudentOverviewStats = {
   }
   subjectsAtRisk: number
   totalEvaluations: number
+  allGrades: Array<{
+    id: string
+    subject: string | null
+    type: string | null
+    date: string | null
+    grade: number | null
+    weight: number | null
+  }>
   recentGrades: Array<{
     id: string
     subject: string | null
@@ -26,6 +34,13 @@ export type StudentOverviewStats = {
     date: string | null
     grade: number | null
     weight: number | null
+  }>
+  allAttendance: Array<{
+    id: string
+    subject: string | null
+    date: string | null
+    status: string | null
+    observations: string | null
   }>
   recentAttendance: Array<{
     id: string

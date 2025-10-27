@@ -183,17 +183,17 @@ export default function DashboardPage() {
       setStudentOverviewLoading(true)
       setStudentOverviewError("")
       try {
-        // Obtener registros de los últimos 15 días para actividad reciente
-        const fifteenDaysAgo = new Date()
-        fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15)
-        const fromDate = fifteenDaysAgo.toISOString().slice(0, 10)
+        // Obtener registros de los últimos 90 días para el calendario y actividad reciente
+        const ninetyDaysAgo = new Date()
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+        const fromDate = ninetyDaysAgo.toISOString().slice(0, 10)
 
         const [gradesRes, attendanceRes, recentAttendanceRes] = await Promise.all([
           fetch(`/api/grades?student_id=${encodeURIComponent(user.id)}`, { credentials: "include" }),
           fetch(`/api/attendance?summary=student&student_id=${encodeURIComponent(user.id)}`, {
             credentials: "include",
           }),
-          fetch(`/api/attendance?student_id=${encodeURIComponent(user.id)}&from=${fromDate}&limit=10`, {
+          fetch(`/api/attendance?student_id=${encodeURIComponent(user.id)}&from=${fromDate}&limit=100`, {
             credentials: "include",
           }),
         ])
@@ -261,6 +261,19 @@ export default function DashboardPage() {
                 },
             subjectsAtRisk,
             totalEvaluations: grades.length,
+            // Todas las notas (para el calendario)
+            allGrades: grades
+              .filter((grade) => typeof grade.fecha === "string")
+              .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""))
+              .map((grade) => ({
+                id: grade.id,
+                subject: grade.materia_nombre,
+                type: grade.tipo_evaluacion,
+                date: grade.fecha,
+                grade: grade.calificacion,
+                weight: grade.peso,
+              })),
+            // Solo las 5 más recientes (para actividad reciente)
             recentGrades: grades
               .filter((grade) => typeof grade.fecha === "string")
               .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""))
@@ -273,6 +286,18 @@ export default function DashboardPage() {
                 grade: grade.calificacion,
                 weight: grade.peso,
               })),
+            // Todas las asistencias (para el calendario)
+            allAttendance: recentAttendanceRecords
+              .filter((record: any) => record?.fecha)
+              .sort((a: any, b: any) => (b.fecha || "").localeCompare(a.fecha || ""))
+              .map((record: any) => ({
+                id: record.id || `${record.estudiante_id}-${record.fecha}`,
+                subject: record.materia_nombre,
+                date: record.fecha,
+                status: record.estado,
+                observations: record.observaciones,
+              })),
+            // Solo las 5 más recientes (para actividad reciente)
             recentAttendance: recentAttendanceRecords
               .filter((record: any) => record?.fecha)
               .sort((a: any, b: any) => (b.fecha || "").localeCompare(a.fecha || ""))
@@ -304,6 +329,70 @@ export default function DashboardPage() {
       cancelled = true
     }
   }, [user])
+
+  // Convertir notas y asistencias en eventos del calendario
+  const getCalendarEvents = () => {
+    if (!user) return []
+    
+    if (user.role === "student" && studentOverview) {
+      const events: Array<{
+        id: string
+        title: string
+        subject: string | null
+        date: string
+        type: 'grade' | 'attendance'
+        value?: number | string | null
+      }> = []
+
+      // Agregar notas como eventos
+      if (studentOverview.allGrades) {
+        studentOverview.allGrades.forEach((grade) => {
+          if (grade.date) {
+            events.push({
+              id: `grade-${grade.id}`,
+              title: `${grade.type || 'Evaluación'}: ${grade.grade ?? '—'}`,
+              subject: grade.subject,
+              date: grade.date,
+              type: 'grade',
+              value: grade.grade
+            })
+          }
+        })
+      }
+
+      // Agregar asistencias como eventos
+      if (studentOverview.allAttendance) {
+        studentOverview.allAttendance.forEach((record) => {
+          if (record.date) {
+            const statusLabel = record.status === 'presente' ? 'Presente' :
+                               record.status === 'ausente' ? 'Ausente' :
+                               record.status === 'llegada_tarde' ? 'Llegada Tarde' :
+                               record.status === 'falta_justificada' ? 'Falta Justificada' :
+                               record.status || 'Registro'
+            
+            events.push({
+              id: `attendance-${record.id}`,
+              title: statusLabel,
+              subject: record.subject,
+              date: record.date,
+              type: 'attendance',
+              value: statusLabel
+            })
+          }
+        })
+      }
+
+      return events
+    }
+
+    // Para padres, usar datos del tutor summary si está disponible
+    if (user.role === "parent" && summary) {
+      // Aquí podrías agregar lógica para padres si es necesario
+      return []
+    }
+
+    return []
+  }
 
   if (!user) {
     return (
@@ -444,7 +533,10 @@ export default function DashboardPage() {
           style={{ animationDelay: "0.4s" }}
         >
           <div className="lg:col-span-2">
-            <Calendar />
+            <Calendar 
+              userRole={user.role}
+              events={getCalendarEvents()}
+            />
           </div>
           <div className="space-y-4 lg:space-y-6">
             <RecentActivity
