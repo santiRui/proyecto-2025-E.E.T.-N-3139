@@ -163,13 +163,6 @@ export async function GET(_req: NextRequest) {
       const firstCourse = rels?.[0]
       const courseInfo = firstCourse?.cursos || null
       const courseId = firstCourse?.curso_id || courseInfo?.id || null
-      
-      // Debug logs
-      console.log('DEBUG - Student:', student.nombre_completo)
-      console.log('DEBUG - rawRels:', JSON.stringify(rawRels))
-      console.log('DEBUG - firstCourse:', JSON.stringify(firstCourse))
-      console.log('DEBUG - courseInfo:', JSON.stringify(courseInfo))
-      console.log('DEBUG - courseId:', courseId)
 
       const attendance = attendanceMap.get(student.id) || null
       const studentGrades = gradesMap.get(student.id) || []
