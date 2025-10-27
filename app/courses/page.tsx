@@ -493,40 +493,6 @@ export default function CoursesPage() {
                                     </div>
                                   )
                                 }
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Estudiantes del curso</CardTitle>
-                  {(user.role === 'preceptor' || user.dbRole === 'directivo' || user.dbRole === 'administrador' || user.role === 'admin') && (
-                    <Dialog open={assignOpen} onOpenChange={(o) => { setAssignOpen(o); if (!o) { setSearch(""); setSearchResults([]); setSelectedStudentId(""); setAssignError("") } }}>
-                      <DialogTrigger asChild>
-                        <Button>Asignar estudiante</Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Asignar estudiante a {selectedCourse?.nombre}</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-3">
-                          <Input
-                            placeholder="Buscar por nombre o DNI..."
-                            value={search}
-                            onChange={async (e) => {
-                              const q = e.target.value
-                              setSearch(q)
-                              setSearching(true)
-                              try { await fetchStudentsQuery(q) } finally { setSearching(false) }
-                            }}
-                          />
-                          <div className="max-h-64 overflow-auto border rounded">
-                            {searching && <div className="p-3 text-sm text-muted-foreground">Buscando...</div>}
-                            {!searching && searchResults.length === 0 && <div className="p-3 text-sm text-muted-foreground">Sin resultados</div>}
-                            {searchResults.map((s) => {
-                              const inThisCourse = students.some((st) => st.id === s.id)
-                              const rels = Array.isArray(s.cursos_estudiantes) ? s.cursos_estudiantes : []
-                              const inAnyCourse = rels.some((r: any) => !!r?.curso_id)
-                              const inOtherCourse = rels.some((r: any) => r?.curso_id && r.curso_id !== selectedCourse?.id)
-                              const disabled = inThisCourse || inOtherCourse
-                              if (disabled) {
                                 return (
                                   <label key={s.id} className={`flex items-center gap-2 p-2 border-b last:border-b-0`}>
                                     <input type="radio" name="sel_student" value={s.id} checked={selectedStudentId === s.id} onChange={() => setSelectedStudentId(s.id)} />
@@ -646,79 +612,7 @@ export default function CoursesPage() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle>Docentes del curso</CardTitle>
-                          {assignError && <div className="text-sm text-destructive">{assignError}</div>}
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setAssignOpen(false)}>Cancelar</Button>
-                          <Button
-                            disabled={!selectedStudentId}
-                            onClick={async () => {
-                              if (!selectedStudentId || !selectedCourse) return
-                              const res = await fetch('/api/course-students', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                credentials: 'include',
-                                body: JSON.stringify({ course_id: selectedCourse.id, student_id: selectedStudentId })
-                              })
-                              if (res.ok) {
-                                setAssignOpen(false)
-                                setSelectedStudentId("")
-                                // reload students
-                                try {
-                                  const r = await fetch(`/api/course-students?course_id=${encodeURIComponent(selectedCourse.id)}`, { credentials: 'include' })
-                                  const d = await r.json().catch(() => ({}))
-                                  if (r.ok) setStudents(d.students || [])
-                                } catch {}
-                              } else {
-                                const data = await res.json().catch(() => ({}))
-                                setAssignError(data?.error || 'No se pudo asignar')
-                              }
-                            }}
-                          >
-                            Asignar
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {students.map((s) => (
-                    <div key={s.id} className="p-3 border rounded flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">{s.nombre_completo}</div>
-                        <div className="text-sm text-muted-foreground">{s.dni} · {s.correo}</div>
-                      </div>
-                      {(user.role === 'preceptor' || user.dbRole === 'directivo' || user.dbRole === 'administrador' || user.role === 'admin') && (
-                        <Button
-                          variant="outline"
-                          onClick={async () => {
-                            const res = await fetch(`/api/course-students?course_id=${encodeURIComponent(selectedCourse.id)}&student_id=${encodeURIComponent(s.id)}`, {
-                              method: 'DELETE',
-                              credentials: 'include',
-                            })
-                            if (res.ok) setStudents((prev) => prev.filter((x) => x.id !== s.id))
-                          }}
-                        >
-                          Quitar
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                  {students.length === 0 && (
-                    <div className="text-sm text-muted-foreground">Este curso aún no tiene estudiantes</div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Docentes del curso</CardTitle>
-                  {(user.role === 'preceptor' || user.dbRole === 'directivo' || user.dbRole === 'administrador' || user.role === 'admin') && (
+                    {(user.role === 'preceptor' || user.dbRole === 'directivo' || user.dbRole === 'administrador' || user.role === 'admin') && (
                     <Dialog open={assignTeacherOpen} onOpenChange={(o) => { setAssignTeacherOpen(o); if (!o) { setTeacherQuery(""); setTeacherResults([]); setSelectedTeacherId("") } }}>
                       <DialogTrigger asChild>
                         <Button>Asignar docente</Button>
@@ -785,6 +679,7 @@ export default function CoursesPage() {
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
