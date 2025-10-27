@@ -4,12 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Clock, FileText, Users, Calendar } from "lucide-react"
 import type { TutorSummaryResponse } from "@/lib/types/tutor-summary"
+import type { StudentOverviewStats } from "./quick-stats"
 
 interface RecentActivityProps {
   userRole: string
   tutorSummary?: TutorSummaryResponse | null
   tutorSummaryLoading?: boolean
   tutorSummaryError?: string
+  studentOverview?: StudentOverviewStats | null
+  studentOverviewLoading?: boolean
+  studentOverviewError?: string
 }
 
 type Activity = {
@@ -21,7 +25,15 @@ type Activity = {
   icon: any
 }
 
-export function RecentActivity({ userRole, tutorSummary, tutorSummaryLoading, tutorSummaryError }: RecentActivityProps) {
+export function RecentActivity({
+  userRole,
+  tutorSummary,
+  tutorSummaryLoading,
+  tutorSummaryError,
+  studentOverview,
+  studentOverviewLoading,
+  studentOverviewError,
+}: RecentActivityProps) {
   const formatDate = (value: string | null | undefined) => {
     if (!value) return "Sin fecha"
     return new Date(value).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -29,33 +41,88 @@ export function RecentActivity({ userRole, tutorSummary, tutorSummaryLoading, tu
 
   const getActivitiesForRole = (role: string): Activity[] => {
     switch (role) {
-      case "student":
-        return [
-          {
-            id: 1,
-            title: "Nueva tarea asignada",
-            description: "Matemática - Ejercicios de álgebra",
-            time: "Hace 2 horas",
-            type: "assignment",
-            icon: FileText,
-          },
-          {
-            id: 2,
-            title: "Calificación publicada",
-            description: "Historia - Examen parcial: 9/10",
-            time: "Hace 1 día",
-            type: "grade",
-            icon: Users,
-          },
-          {
-            id: 3,
-            title: "Recordatorio de clase",
-            description: "Laboratorio de Ciencias - Mañana 9:00 AM",
-            time: "Hace 2 días",
-            type: "reminder",
-            icon: Calendar,
-          },
-        ]
+      case "student": {
+        if (studentOverviewLoading) {
+          return [
+            {
+              id: "loading",
+              title: "Cargando actividad",
+              description: "Estamos obteniendo tus registros de notas y asistencia",
+              time: "",
+              type: "loading",
+              icon: Clock,
+            },
+          ]
+        }
+
+        if (studentOverviewError) {
+          return [
+            {
+              id: "error",
+              title: "Sin datos",
+              description: studentOverviewError,
+              time: "",
+              type: "error",
+              icon: Users,
+            },
+          ]
+        }
+
+        if (!studentOverview) {
+          return [
+            {
+              id: "empty",
+              title: "Sin registros disponibles",
+              description: "Cuando haya información de notas o asistencias aparecerá aquí",
+              time: "",
+              type: "info",
+              icon: Users,
+            },
+          ]
+        }
+
+        const gradeActivities: Activity[] = studentOverview.recentGrades.map((grade, index) => ({
+          id: `${grade.id}-${index}`,
+          title: grade.subject ? `Calificación en ${grade.subject}` : "Calificación registrada",
+          description: `${grade.type || "Evaluación"}: ${grade.grade ?? "—"}${
+            grade.weight != null ? ` · Peso ${grade.weight}%` : ""
+          }`,
+          time: formatDate(grade.date),
+          type: "grade",
+          icon: FileText,
+        }))
+
+        const attendance = studentOverview.attendanceSummary
+        const attendancePercentage = studentOverview.attendancePercentage != null
+          ? `${Math.round(studentOverview.attendancePercentage)}%`
+          : "Sin datos"
+
+        const attendanceActivity: Activity = {
+          id: "attendance",
+          title: "Estado de asistencia",
+          description: `Presentes: ${attendance.presentes} · Ausentes: ${attendance.ausentes} · Llegadas tarde: ${attendance.llegadasTarde}`,
+          time: `Faltas equivalentes: ${attendance.faltasEquivalentes.toFixed(2)} · ${attendancePercentage}`,
+          type: "attendance",
+          icon: Calendar,
+        }
+
+        const allActivities = [...gradeActivities, attendanceActivity]
+          .sort((a, b) => (b.time || "").localeCompare(a.time || ""))
+          .slice(0, 6)
+
+        return allActivities.length > 0
+          ? allActivities
+          : [
+              {
+                id: "no-data",
+                title: "Sin registros recientes",
+                description: "Cuando se carguen nuevas calificaciones o asistencias aparecerán aquí",
+                time: "",
+                type: "info",
+                icon: Users,
+              },
+            ]
+      }
       case "teacher":
         return [
           {
