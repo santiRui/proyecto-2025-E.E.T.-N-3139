@@ -10,6 +10,7 @@ export default function NewsPage() {
   const [user, setUser] = useState<any>(null)
   const router = useRouter()
   const [refreshKey, setRefreshKey] = useState(0)
+  const [editingNews, setEditingNews] = useState<any | null>(null)
 
   useEffect(() => {
     const userData = localStorage.getItem("user")
@@ -54,12 +55,19 @@ export default function NewsPage() {
             {canCreateNews && (
               <NewsCreate
                 userRole={normalize(user.dbRole) || normalize(user.role)}
-                onNewsCreated={() => setRefreshKey((k) => k + 1)}
+                editNews={editingNews}
+                onNewsCreated={() => {
+                  setEditingNews(null)
+                  setRefreshKey((k) => k + 1)
+                }}
               />
             )}
           </div>
 
-          <NewsList refreshKey={refreshKey} />
+          <NewsList
+            refreshKey={refreshKey}
+            onEdit={(news) => setEditingNews(news)}
+          />
         </div>
       </div>
     </MainLayout>

@@ -33,9 +33,20 @@ const priorities = [
 interface NewsCreateProps {
   userRole: string
   onNewsCreated?: () => void
+  editNews?: {
+    id: string
+    title: string
+    content: string
+    category: string
+    priority: "high" | "medium" | "low"
+    tags: string[]
+    image_url?: string | null
+    target_all_courses: boolean
+    target_course_ids?: string[]
+  } | null
 }
 
-export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
+export function NewsCreate({ userRole, onNewsCreated, editNews }: NewsCreateProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
@@ -66,6 +77,20 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
     }
   }, [isOpen])
 
+  useEffect(() => {
+    if (editNews) {
+      setIsOpen(true)
+      setTitle(editNews.title || "")
+      setContent(editNews.content || "")
+      setCategory(editNews.category || "")
+      setPriority(editNews.priority || "")
+      setTags(Array.isArray(editNews.tags) ? editNews.tags : [])
+      setImageUrl(editNews.image_url || "")
+      setAllCourses(Boolean(editNews.target_all_courses))
+      setSelectedCourseIds(Array.isArray(editNews.target_course_ids) ? editNews.target_course_ids : [])
+    }
+  }, [editNews])
+
   const handleAddTag = () => {
     if (newTag.trim() && !tags.includes(newTag.trim())) {
       setTags([...tags, newTag.trim()])
@@ -82,10 +107,12 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
     setIsSubmitting(true)
 
     try {
-      const res = await fetch('/api/news', {
-        method: 'POST',
+      const isEdit = Boolean(editNews?.id)
+      const res = await fetch(`/api/news${isEdit ? `?id=${encodeURIComponent(editNews!.id)}` : ''}`, {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...(isEdit ? { id: editNews!.id } : {}),
           title,
           content,
           category,
@@ -98,7 +125,7 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        throw new Error(err?.error || 'No se pudo crear la noticia')
+        throw new Error(err?.error || (isEdit ? 'No se pudo actualizar la noticia' : 'No se pudo crear la noticia'))
       }
 
       // Reset form
@@ -113,7 +140,7 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
       setIsOpen(false)
       onNewsCreated?.()
     } catch (error: any) {
-      alert(error?.message || 'Error al crear la noticia')
+      alert(error?.message || 'Error al guardar la noticia')
     } finally {
       setIsSubmitting(false)
     }
@@ -142,7 +169,7 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <PlusCircle className="w-5 h-5" />
-            Nueva Noticia
+            {editNews ? 'Editar Noticia' : 'Nueva Noticia'}
           </CardTitle>
           <Button variant="ghost" size="sm" onClick={() => setIsOpen(false)}>
             <X className="w-4 h-4" />
@@ -353,12 +380,12 @@ export function NewsCreate({ userRole, onNewsCreated }: NewsCreateProps) {
               {isSubmitting ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground"></div>
-                  Publicando...
+                  {editNews ? 'Guardando...' : 'Publicando...'}
                 </>
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  Publicar Noticia
+                  {editNews ? 'Guardar Cambios' : 'Publicar Noticia'}
                 </>
               )}
             </Button>

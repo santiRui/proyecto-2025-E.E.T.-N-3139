@@ -20,7 +20,7 @@ type NewsItem = {
   created_at: string
 }
 
-export function NewsList({ refreshKey }: { refreshKey?: number }) {
+export function NewsList({ refreshKey, onEdit }: { refreshKey?: number; onEdit?: (news: NewsItem) => void }) {
   const [items, setItems] = useState<NewsItem[]>([])
   const [loading, setLoading] = useState(true)
   const [canManage, setCanManage] = useState(false)
@@ -140,7 +140,7 @@ export function NewsList({ refreshKey }: { refreshKey?: number }) {
               <div className="flex items-center gap-2">
                 {canManage && (
                   <>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" onClick={() => onEdit?.(news)}>
                       Editar
                     </Button>
                     <Button variant="destructive" size="sm" onClick={() => handleDelete(news.id)}>
