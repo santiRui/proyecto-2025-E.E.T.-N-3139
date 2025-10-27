@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -10,17 +10,22 @@ import { Search, Filter, Users } from "lucide-react"
 
 const defaultCourses = ["3° Año C", "4° Año A", "4° Año B", "5° Año A", "5° Año B", "6° Año A"]
 
+type CourseOption = {
+  id: string
+  nombre: string
+}
+
 interface StudentListProps {
   userRole: string
   onSelectStudent: (student: any) => void
   selectedStudentId?: number
   students?: any[]
-  courses?: string[]
+  courses?: CourseOption[]
 }
 
 export function StudentList({ userRole, onSelectStudent, selectedStudentId, students, courses }: StudentListProps) {
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCourse, setSelectedCourse] = useState("Todos los cursos")
+  const [selectedCourseId, setSelectedCourseId] = useState<string>("all")
 
   const sourceStudents = Array.isArray(students) && students.length > 0
     ? students.map((s) => {
@@ -31,6 +36,7 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
           id: s.id,
           name: s.name || s.nombre_completo || 'Sin nombre',
           course: s.course || '—',
+          courseId: s.courseId ?? null,
           email: s.email || s.correo || '',
           phone: s.phone || s.telefono || '',
           average,
@@ -41,13 +47,30 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
       })
     : []
 
-  const courseOptions = ["Todos los cursos", ...((courses && courses.length > 0) ? courses : defaultCourses)]
+  const providedCourses: CourseOption[] = Array.isArray(courses) && courses.length > 0
+    ? courses
+    : defaultCourses.map((nombre) => ({ id: nombre, nombre }))
+
+  const courseNameById = new Map(providedCourses.map((course) => [course.id, course.nombre]))
+
+  useEffect(() => {
+    if (selectedCourseId === 'all') return
+    const exists = providedCourses.some((course) => course.id === selectedCourseId)
+    if (!exists) setSelectedCourseId('all')
+  }, [providedCourses, selectedCourseId])
 
   const filteredStudents = sourceStudents.filter((student) => {
     const matchesSearch =
       student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.email.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCourse = selectedCourse === "Todos los cursos" || student.course === selectedCourse
+    if (selectedCourseId === 'all') return matchesSearch
+
+    const selectedCourseName = courseNameById.get(selectedCourseId)?.toLowerCase()
+    const studentCourseName = typeof student.course === 'string' ? student.course.toLowerCase() : ''
+    const matchesCourseId = student.courseId != null && student.courseId === selectedCourseId
+    const matchesCourseName = selectedCourseName ? studentCourseName === selectedCourseName : false
+
+    const matchesCourse = matchesCourseId || matchesCourseName
     return matchesSearch && matchesCourse
   })
 
@@ -103,15 +126,16 @@ export function StudentList({ userRole, onSelectStudent, selectedStudentId, stud
             />
           </div>
 
-          <Select value={selectedCourse} onValueChange={setSelectedCourse}>
+          <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
             <SelectTrigger className="w-full sm:w-48">
               <Filter className="w-4 h-4 mr-2" />
-              <SelectValue />
+              <SelectValue placeholder="Todos los cursos" />
             </SelectTrigger>
             <SelectContent>
-              {courseOptions.map((course) => (
-                <SelectItem key={course} value={course}>
-                  {course}
+              <SelectItem value="all">Todos los cursos</SelectItem>
+              {providedCourses.map((course) => (
+                <SelectItem key={course.id} value={course.id}>
+                  {course.nombre}
                 </SelectItem>
               ))}
             </SelectContent>

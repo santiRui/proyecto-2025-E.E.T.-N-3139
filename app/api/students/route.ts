@@ -46,9 +46,8 @@ export async function GET(_req: NextRequest) {
     let attendanceSummaries: Record<string, any> = {}
 
     if (studentIds.length > 0) {
-      const select = encodeURIComponent('estudiante_id,curso_id,total_registros,presentes,llegadas_tarde,ausentes,faltas_justificadas,faltas_equivalentes')
-      const filter = encodeURIComponent(`in.(${studentIds.join(',')})`)
-      const summaryUrl = `${SUPABASE_URL}/rest/v1/v_asistencias_resumen?select=${select}&estudiante_id=${filter}`
+      // No codificar el filtro IN para que PostgREST lo interprete correctamente
+      const summaryUrl = `${SUPABASE_URL}/rest/v1/v_asistencias_resumen?select=estudiante_id,curso_id,total_registros,presentes,llegadas_tarde,ausentes,faltas_justificadas,faltas_equivalentes&estudiante_id=in.(${studentIds.join(',')})`
 
       try {
         const summaryRes = await fetch(summaryUrl, {

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import type { ComponentProps } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,6 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useRouter } from "next/navigation"
+import { StudentProfile } from "@/components/students/student-profile"
 
 export default function CoursesPage() {
   const [user, setUser] = useState<any>(null)
@@ -15,6 +17,7 @@ export default function CoursesPage() {
   const [loading, setLoading] = useState(false)
   const [selectedCourse, setSelectedCourse] = useState<any>(null)
   const [students, setStudents] = useState<any[]>([])
+  const [selectedStudent, setSelectedStudent] = useState<any | null>(null)
   const [teachers, setTeachers] = useState<any[]>([])
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ nombre: "", descripcion: "", anio_lectivo: new Date().getFullYear() })
@@ -31,6 +34,10 @@ export default function CoursesPage() {
   const [teacherSearching, setTeacherSearching] = useState(false)
   const [teacherResults, setTeacherResults] = useState<any[]>([])
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>("")
+  type StudentProfileData = ComponentProps<typeof StudentProfile>["student"]
+  const [selectedStudentDetail, setSelectedStudentDetail] = useState<StudentProfileData | null>(null)
+  const [selectedStudentLoading, setSelectedStudentLoading] = useState(false)
+  const [selectedStudentError, setSelectedStudentError] = useState("")
   const [manageOpen, setManageOpen] = useState(false)
   const [manageAction, setManageAction] = useState<'edit' | 'delete' | null>(null)
   const [manageCourseId, setManageCourseId] = useState<string>("")
@@ -59,6 +66,104 @@ export default function CoursesPage() {
     }
   }
 
+  const computeAverage = (grades: any[]) => {
+    if (!grades || grades.length === 0) return null
+    let weightedSum = 0
+    let totalWeight = 0
+    let sum = 0
+
+    grades.forEach((grade) => {
+      const value = Number(grade?.calificacion)
+      if (Number.isNaN(value)) return
+      sum += value
+      const weight = grade?.peso == null ? 0 : Number(grade.peso)
+      if (!Number.isNaN(weight) && weight > 0) {
+        weightedSum += value * weight
+        totalWeight += weight
+      }
+    })
+
+    const baseAverage = totalWeight > 0 ? weightedSum / totalWeight : sum / grades.length
+    if (!Number.isFinite(baseAverage)) return null
+    return Math.round(baseAverage * 100) / 100
+  }
+
+  const determineStatus = (average: number | null) => {
+    if (average == null) return 'warning'
+    if (average >= 8) return 'active'
+    if (average >= 6) return 'warning'
+    return 'inactive'
+  }
+
+  async function loadStudentDetail(student: any, course: any) {
+    if (!student || !course) {
+      setSelectedStudentDetail(null)
+      return
+    }
+
+    setSelectedStudentLoading(true)
+    setSelectedStudentError("")
+
+    try {
+      const [attendanceRes, gradesRes, subjectsRes] = await Promise.all([
+        fetch(`/api/attendance?summary=student&student_id=${encodeURIComponent(student.id)}&course_id=${encodeURIComponent(course.id)}`, {
+          credentials: 'include',
+        }),
+        fetch(`/api/grades?student_id=${encodeURIComponent(student.id)}`, { credentials: 'include' }),
+        fetch(`/api/course-subjects?course_id=${encodeURIComponent(course.id)}`, { credentials: 'include' }),
+      ])
+
+      const attendanceData = await attendanceRes.json().catch(() => ({}))
+      const gradesData = await gradesRes.json().catch(() => ({}))
+      const subjectsData = await subjectsRes.json().catch(() => ({}))
+
+      const summaryRow = attendanceRes.ok && Array.isArray(attendanceData?.summaries) ? attendanceData.summaries[0] : null
+      const attendanceSummary = summaryRow
+        ? {
+            estudiante_id: summaryRow.estudiante_id || student.id,
+            curso_id: summaryRow.curso_id || course.id,
+            total_registros: Number(summaryRow.total_registros ?? 0),
+            presentes: Number(summaryRow.presentes ?? 0),
+            llegadas_tarde: Number(summaryRow.llegadas_tarde ?? 0),
+            ausentes: Number(summaryRow.ausentes ?? 0),
+            faltas_justificadas: Number(summaryRow.faltas_justificadas ?? 0),
+            faltas_equivalentes: Number.parseFloat(summaryRow.faltas_equivalentes ?? '0') || 0,
+            porcentaje_asistencia: Number.parseFloat(summaryRow.porcentaje_asistencia ?? '0') || 0,
+          }
+        : null
+
+      const grades = gradesRes.ok && Array.isArray(gradesData?.grades) ? gradesData.grades : []
+      const average = computeAverage(grades)
+
+      const subjects = subjectsRes.ok && Array.isArray(subjectsData?.subjects)
+        ? subjectsData.subjects.map((s: any) => ({ id: s.id ?? s.materia_id ?? null, nombre: s.nombre ?? null }))
+        : []
+
+      const detail: StudentProfileData = {
+        id: student.id,
+        name: student.nombre_completo || student.name || 'Sin nombre',
+        email: student.correo || student.email || '',
+        phone: student.telefono || student.phone || '',
+        course: course?.nombre || '—',
+        courseId: course?.id || null,
+        status: determineStatus(average),
+        faltas: attendanceSummary ? attendanceSummary.faltas_equivalentes : null,
+        average,
+        grades,
+        photo: student.photo || null,
+        courseSubjects: subjects,
+        attendanceSummary,
+      }
+
+      setSelectedStudentDetail(detail)
+    } catch {
+      setSelectedStudentDetail(null)
+      setSelectedStudentError('No se pudieron cargar los datos del estudiante')
+    } finally {
+      setSelectedStudentLoading(false)
+    }
+  }
+
   useEffect(() => {
     // Al abrir el modal o cuando cambia la lista del curso, refrescar resultados según el término actual
     if (assignOpen) {
@@ -77,15 +182,64 @@ export default function CoursesPage() {
   useEffect(() => { loadCourses() }, [])
 
   useEffect(() => {
-    if (!selectedCourse) { setStudents([]); return }
+    if (!selectedCourse) { setStudents([]); setSelectedStudent(null); return }
     ;(async () => {
       try {
         const res = await fetch(`/api/course-students?course_id=${encodeURIComponent(selectedCourse.id)}`, { credentials: 'include' })
         const data = await res.json().catch(() => ({}))
-        if (res.ok) setStudents(data.students || [])
+        if (res.ok) {
+          const studentsData = data.students || []
+
+          if (studentsData.length > 0) {
+            const ids = studentsData.map((s: any) => s.id).filter(Boolean)
+            if (ids.length > 0) {
+              try {
+                const profilesRes = await fetch(`/api/students?ids=${encodeURIComponent(ids.join(','))}`, { credentials: 'include' })
+                const profilesData = await profilesRes.json().catch(() => ({}))
+                if (profilesRes.ok && Array.isArray(profilesData?.students)) {
+                  const profilesMap = new Map<string, any>()
+                  profilesData.students.forEach((student: any) => {
+                    profilesMap.set(student.id, student)
+                  })
+                  studentsData.forEach((student: any) => {
+                    const profile = profilesMap.get(student.id)
+                    if (!profile) return
+                    student.faltas = typeof profile?.attendance_summary?.faltas_equivalentes === 'number'
+                      ? profile.attendance_summary.faltas_equivalentes
+                      : Number.parseFloat(profile?.attendance_summary?.faltas_equivalentes ?? '0') || 0
+                    student.attendanceSummary = profile?.attendance_summary || null
+                    student.average = profile?.average ?? null
+                    student.grades = profile?.grades ?? []
+                    student.courseSubjects = profile?.courseSubjects ?? []
+                    student.status = profile?.status ?? 'warning'
+                  })
+                }
+              } catch {}
+            }
+          }
+
+          setStudents(studentsData)
+          if (selectedStudent) {
+            const match = studentsData.find((s: any) => s.id === selectedStudent.id) || null
+            setSelectedStudent(match)
+            if (match) {
+              await loadStudentDetail(match, selectedCourse)
+            } else {
+              setSelectedStudentDetail(null)
+            }
+          } else {
+            setSelectedStudentDetail(null)
+          }
+        }
       } catch {}
     })()
-  }, [selectedCourse?.id])
+  }, [selectedCourse?.id, selectedStudent?.id])
+
+  useEffect(() => {
+    if (selectedCourse && selectedStudent) {
+      loadStudentDetail(selectedStudent, selectedCourse)
+    }
+  }, [selectedCourse?.id, selectedStudent?.id])
 
   useEffect(() => {
     if (!selectedCourse) { setTeachers([]); return }
@@ -291,6 +445,54 @@ export default function CoursesPage() {
               <Button variant="outline" onClick={() => setSelectedCourse(null)}>← Volver a cursos</Button>
             </div>
 
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Estudiantes del curso</CardTitle>
+                    {(user.role === 'preceptor' || user.dbRole === 'directivo') && (
+                      <Dialog open={assignOpen} onOpenChange={(o) => { setAssignOpen(o); if (!o) { setSearch(""); setSearchResults([]); setSelectedStudentId(""); setAssignError("") } }}>
+                        <DialogTrigger asChild>
+                          <Button>Asignar estudiante</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Asignar estudiante a {selectedCourse?.nombre}</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-3">
+                            <Input
+                              placeholder="Buscar por nombre o DNI..."
+                              value={search}
+                              onChange={async (e) => {
+                                const q = e.target.value
+                                setSearch(q)
+                                setSearching(true)
+                                try { await fetchStudentsQuery(q) } finally { setSearching(false) }
+                              }}
+                            />
+                            <div className="max-h-64 overflow-auto border rounded">
+                              {searching && <div className="p-3 text-sm text-muted-foreground">Buscando...</div>}
+                              {!searching && searchResults.length === 0 && <div className="p-3 text-sm text-muted-foreground">Sin resultados</div>}
+                              {searchResults.map((s) => {
+                                const inThisCourse = students.some((st) => st.id === s.id)
+                                const rels = Array.isArray(s.cursos_estudiantes) ? s.cursos_estudiantes : []
+                                const inAnyCourse = rels.some((r: any) => !!r?.curso_id)
+                                const inOtherCourse = rels.some((r: any) => r?.curso_id && r.curso_id !== selectedCourse?.id)
+                                const disabled = inThisCourse || inOtherCourse
+                                if (disabled) {
+                                  return (
+                                    <div key={s.id} className={`flex items-center gap-2 p-2 border-b last:border-b-0 opacity-60`}>
+                                      <div className="flex-1">
+                                        <div className="text-sm font-medium">{s.nombre_completo}</div>
+                                        <div className={`text-xs ${inOtherCourse ? 'text-destructive' : 'text-muted-foreground'}`}>
+                                          {s.dni} · {s.correo}
+                                          {inOtherCourse && ' — Pertenece a otro curso'}
+                                          {inThisCourse && ' — Ya está en este curso'}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )
+                                }
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -326,29 +528,124 @@ export default function CoursesPage() {
                               const disabled = inThisCourse || inOtherCourse
                               if (disabled) {
                                 return (
-                                  <div key={s.id} className={`flex items-center gap-2 p-2 border-b last:border-b-0 opacity-60`}>
+                                  <label key={s.id} className={`flex items-center gap-2 p-2 border-b last:border-b-0`}>
+                                    <input type="radio" name="sel_student" value={s.id} checked={selectedStudentId === s.id} onChange={() => setSelectedStudentId(s.id)} />
                                     <div className="flex-1">
                                       <div className="text-sm font-medium">{s.nombre_completo}</div>
-                                      <div className={`text-xs ${inOtherCourse ? 'text-destructive' : 'text-muted-foreground'}`}>
-                                        {s.dni} · {s.correo}
-                                        {inOtherCourse && ' — Pertenece a otro curso'}
-                                        {inThisCourse && ' — Ya está en este curso'}
-                                      </div>
+                                      <div className="text-xs text-muted-foreground">{s.dni} · {s.correo}</div>
                                     </div>
-                                  </div>
+                                  </label>
                                 )
-                              }
-                              return (
-                                <label key={s.id} className={`flex items-center gap-2 p-2 border-b last:border-b-0`}>
-                                  <input type="radio" name="sel_student" value={s.id} checked={selectedStudentId === s.id} onChange={() => setSelectedStudentId(s.id)} />
-                                  <div className="flex-1">
-                                    <div className="text-sm font-medium">{s.nombre_completo}</div>
-                                    <div className="text-xs text-muted-foreground">{s.dni} · {s.correo}</div>
-                                  </div>
-                                </label>
-                              )
-                            })}
+                              })}
+                            </div>
+                            {assignError && <div className="text-sm text-destructive">{assignError}</div>}
                           </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setAssignOpen(false)}>Cancelar</Button>
+                            <Button
+                              disabled={!selectedStudentId}
+                              onClick={async () => {
+                                if (!selectedStudentId || !selectedCourse) return
+                                const res = await fetch('/api/course-students', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  credentials: 'include',
+                                  body: JSON.stringify({ course_id: selectedCourse.id, student_id: selectedStudentId })
+                                })
+                                if (res.ok) {
+                                  setAssignOpen(false)
+                                  setSelectedStudentId("")
+                                  // reload students
+                                  try {
+                                    const r = await fetch(`/api/course-students?course_id=${encodeURIComponent(selectedCourse.id)}`, { credentials: 'include' })
+                                    const d = await r.json().catch(() => ({}))
+                                    if (r.ok) setStudents(d.students || [])
+                                  } catch {}
+                                } else {
+                                  const data = await res.json().catch(() => ({}))
+                                  setAssignError(data?.error || 'No se pudo asignar')
+                                }
+                              }}
+                            >
+                              Asignar
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {students.map((s) => {
+                      const isSelected = selectedStudent?.id === s.id
+                      return (
+                        <div
+                          key={s.id}
+                          className={`p-3 border rounded flex items-center justify-between cursor-pointer transition-colors ${
+                            isSelected ? 'bg-accent border-primary' : 'hover:bg-accent/50'
+                          }`}
+                          onClick={() => setSelectedStudent(s)}
+                        >
+                          <div>
+                            <div className="font-medium">{s.nombre_completo}</div>
+                            <div className="text-sm text-muted-foreground">{s.dni} · {s.correo}</div>
+                          </div>
+                          {(user.role === 'preceptor' || user.dbRole === 'directivo') && (
+                            <Button
+                              variant="outline"
+                              onClick={async (event) => {
+                                event.stopPropagation()
+                                const res = await fetch(`/api/course-students?course_id=${encodeURIComponent(selectedCourse.id)}&student_id=${encodeURIComponent(s.id)}`, {
+                                  method: 'DELETE',
+                                  credentials: 'include',
+                                })
+                                if (res.ok) {
+                                  setStudents((prev: any[]) => prev.filter((x) => x.id !== s.id))
+                                  setSelectedStudent((prev: any | null) => (prev?.id === s.id ? null : prev))
+                                }
+                              }}
+                            >
+                              Quitar
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {students.length === 0 && (
+                      <div className="text-sm text-muted-foreground">Este curso aún no tiene estudiantes</div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div>
+                {selectedStudentLoading && (
+                  <Card>
+                    <CardContent className="p-6 text-sm text-muted-foreground">Cargando perfil...</CardContent>
+                  </Card>
+                )}
+                {!selectedStudentLoading && selectedStudentError && (
+                  <Card>
+                    <CardContent className="p-6 text-sm text-destructive">{selectedStudentError}</CardContent>
+                  </Card>
+                )}
+                {!selectedStudentLoading && !selectedStudentError && selectedStudentDetail && (
+                  <StudentProfile student={selectedStudentDetail} userRole={user.role} userDbRole={user.dbRole} />
+                )}
+                {!selectedStudentLoading && !selectedStudentError && !selectedStudentDetail && (
+                  <Card>
+                    <CardContent className="p-6 text-sm text-muted-foreground">Selecciona un estudiante para ver el detalle.</CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
+
+            {(user.role === 'preceptor' || user.dbRole === 'directivo') && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Docentes del curso</CardTitle>
                           {assignError && <div className="text-sm text-destructive">{assignError}</div>}
                         </div>
                         <DialogFooter>
@@ -441,7 +738,7 @@ export default function CoursesPage() {
                               try {
                                 const res = await fetch(`/api/teachers?q=${encodeURIComponent(q)}`, { credentials: 'include' })
                                 const data = await res.json().catch(() => ({}))
-                                if (res.ok) setTeacherResults((data.teachers || []).filter((t: any) => !teachers.some((tt) => tt.id === t.id)))
+                                if (res.ok) setTeacherResults((data.teachers || []).filter((t: any) => !teachers.some((tt: any) => tt.id === t.id)))
                               } finally { setTeacherSearching(false) }
                             }}
                           />
@@ -488,18 +785,16 @@ export default function CoursesPage() {
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {teachers.map((t) => (
-                    <div key={t.id} className="p-3 border rounded flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">{t.nombre_completo}</div>
-                        <div className="text-sm text-muted-foreground">{t.dni} · {t.correo}</div>
-                      </div>
-                      {(user.role === 'preceptor' || user.dbRole === 'directivo') && (
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {teachers.map((t) => (
+                      <div key={t.id} className="p-3 border rounded flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{t.nombre_completo}</div>
+                          <div className="text-sm text-muted-foreground">{t.dni} · {t.correo}</div>
+                        </div>
                         <Button
                           variant="outline"
                           onClick={async () => {
@@ -507,20 +802,21 @@ export default function CoursesPage() {
                               method: 'DELETE',
                               credentials: 'include',
                             })
-                            if (res.ok) setTeachers((prev) => prev.filter((x) => x.id !== t.id))
+                            if (res.ok) setTeachers((prev: any[]) => prev.filter((x) => x.id !== t.id))
                           }}
                         >
                           Quitar
                         </Button>
-                      )}
-                    </div>
-                  ))}
-                  {teachers.length === 0 && (
-                    <div className="text-sm text-muted-foreground">Este curso aún no tiene docentes</div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                      </div>
+                    ))}
+                    {teachers.length === 0 && (
+                      <div className="text-sm text-muted-foreground">Este curso aún no tiene docentes</div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
           </div>
         )}
       </div>

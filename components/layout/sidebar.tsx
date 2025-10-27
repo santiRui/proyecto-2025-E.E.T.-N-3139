@@ -55,7 +55,7 @@ const sidebarItems: SidebarItem[] = [
     title: "Notas y Asistencia",
     href: "/grades",
     icon: ClipboardList,
-    roles: ["student", "teacher", "preceptor", "parent"],
+    roles: ["student", "teacher", "preceptor"],
   },
   {
     title: "Material Educativo",

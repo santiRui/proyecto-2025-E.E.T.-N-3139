@@ -3,13 +3,31 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Clock, FileText, Users, Calendar } from "lucide-react"
+import type { TutorSummaryResponse } from "@/lib/types/tutor-summary"
 
 interface RecentActivityProps {
   userRole: string
+  tutorSummary?: TutorSummaryResponse | null
+  tutorSummaryLoading?: boolean
+  tutorSummaryError?: string
 }
 
-export function RecentActivity({ userRole }: RecentActivityProps) {
-  const getActivitiesForRole = (role: string) => {
+type Activity = {
+  id: string | number
+  title: string
+  description: string
+  time: string
+  type: string
+  icon: any
+}
+
+export function RecentActivity({ userRole, tutorSummary, tutorSummaryLoading, tutorSummaryError }: RecentActivityProps) {
+  const formatDate = (value: string | null | undefined) => {
+    if (!value) return "Sin fecha"
+    return new Date(value).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+
+  const getActivitiesForRole = (role: string): Activity[] => {
     switch (role) {
       case "student":
         return [
@@ -92,33 +110,90 @@ export function RecentActivity({ userRole }: RecentActivityProps) {
             icon: FileText,
           },
         ]
-      case "parent":
-        return [
-          {
-            id: 1,
-            title: "Nueva calificación",
-            description: "María - Lengua: 8/10",
-            time: "Hace 1 hora",
+      case "parent": {
+        if (tutorSummaryLoading) {
+          return [
+            {
+              id: "loading",
+              title: "Cargando actividad reciente",
+              description: "Estamos obteniendo los últimos registros",
+              time: "",
+              type: "loading",
+              icon: Clock,
+            },
+          ]
+        }
+
+        if (tutorSummaryError) {
+          return [
+            {
+              id: "error",
+              title: "Sin actividad",
+              description: tutorSummaryError,
+              time: "",
+              type: "error",
+              icon: Users,
+            },
+          ]
+        }
+
+        const students = tutorSummary?.students || []
+        if (students.length === 0) {
+          return [
+            {
+              id: "empty",
+              title: "Sin estudiantes vinculados",
+              description: "Asocia un estudiante para ver su actividad",
+              time: "",
+              type: "info",
+              icon: Users,
+            },
+          ]
+        }
+
+        const gradeActivities: Activity[] = students.flatMap((student) => {
+          return (student.grades.recent || []).map((grade, index) => ({
+            id: `${student.student.id}-grade-${index}`,
+            title: `${student.student.nombre} · ${grade.subject || "Materia"}`,
+            description: `${grade.type || "Evaluación"}: ${grade.grade ?? "—"}${grade.weight != null ? ` · Peso ${grade.weight}%` : ""}`,
+            time: formatDate(grade.date),
             type: "grade",
             icon: FileText,
-          },
-          {
-            id: 2,
-            title: "Comunicado escolar",
-            description: "Información sobre reunión de padres",
-            time: "Hace 4 horas",
-            type: "communication",
-            icon: Users,
-          },
-          {
-            id: 3,
-            title: "Recordatorio",
-            description: "Entrega de boletín - Viernes 16:00",
-            time: "Hace 1 día",
-            type: "reminder",
+          }))
+        })
+
+        const attendanceActivities: Activity[] = students.map((student) => {
+          const attendance = student.attendance
+          const porcentaje = attendance.porcentaje_asistencia != null
+            ? `${Math.round(attendance.porcentaje_asistencia)}%`
+            : "Sin datos"
+          return {
+            id: `${student.student.id}-attendance`,
+            title: `${student.student.nombre} · Asistencia actual`,
+            description: `Presentes: ${attendance.presentes} · Ausentes: ${attendance.ausentes} · Llegadas tarde: ${attendance.llegadas_tarde}`,
+            time: `Asistencia equivalente: ${attendance.faltas_equivalentes.toFixed(2)} · ${porcentaje}`,
+            type: "attendance",
             icon: Calendar,
-          },
-        ]
+          }
+        })
+
+        const allActivities = [...gradeActivities, ...attendanceActivities]
+          .sort((a, b) => (b.time || "").localeCompare(a.time || ""))
+          .slice(0, 6)
+
+        return allActivities.length > 0
+          ? allActivities
+          : [
+              {
+                id: "no-data",
+                title: "Sin registros recientes",
+                description: "Cuando se carguen nuevas calificaciones o asistencias aparecerán aquí",
+                time: "",
+                type: "info",
+                icon: Users,
+              },
+            ]
+      }
       default:
         return []
     }

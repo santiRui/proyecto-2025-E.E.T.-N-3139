@@ -253,7 +253,7 @@ export default function StudentsPage() {
                 onSelectStudent={setSelectedStudent}
                 selectedStudentId={selectedStudent?.id}
                 students={students}
-                courses={courses.map((c: any) => c.nombre)}
+                courses={courses.map((c: any) => ({ id: c.id, nombre: c.nombre }))}
               />
             </div>
             <div>
